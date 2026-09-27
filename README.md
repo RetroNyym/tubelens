@@ -1,5 +1,9 @@
 # TubeLens
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](requirements.txt)
+[![Free queries](https://img.shields.io/badge/ücretsiz%20sorgu-5-brightgreen.svg)](#ücretsiz-plan-ve-lisans)
+
 **YouTube AI arama görünürlüğü + affiliate gelir denetçisi.**
 Tek komutla bir videonun ya da kanalın: yapay zekâ özetlerinde görünüp görünmediğini,
 4 arama motorundaki sırasını, affiliate link / disclosure / YouTube Shopping eksiklerini
@@ -154,11 +158,26 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 
 ---
 
+## Lisans
+
+Anahtarlar bu depo üzerinden dağıtılır:
+
+1. İletişim: [Issues](https://github.com/RetroNyym/tubelens/issues) (anahtar talebi / ödeme)
+2. Ödeme sonrası **Pro anahtarınız** iletilir.
+3. Aktivasyon (çevrimdışı, internet gerektirmez):
+
+```bash
+python -m tubelens activate TL1-xxxx-yyyy
+```
+
+Ücretsiz planda kalan hakkınızı `python -m tubelens status` ile görürsünüz.
+Satıcı tarafında anahtar üretimi: `python -m tubelens keygen --days 365`.
+
+Kodun kendisi [MIT](LICENSE) ile lisanslıdır; **anahtar üretimi ve satışı**
+lisans sahibine aittir. Kota dosyası (`data/quota.json`) kullanıcının makinesinde
+tutulur — ödeme entegrasyonu (webhook ile uzaktan doğrulama) yol haritasındadır.
+
 ## Katkı
 
 Issue ve PR açmak serbest. Kurulum sonrası `python -m tubelens status` ile
 ortamın çalıştığını doğrulayın.
-
-## Lisans
-
-[MIT](LICENSE) — kod MIT, **lisans anahtarı üretimi ve dağıtımımı satıcıya aittir**.
