@@ -1,0 +1,62 @@
+{
+  "programs": [
+    {
+      "name": "Amazon Associates",
+      "domains": ["amazon.com.tr", "amzn.to", "a.co", "amazon.com", "amazon.de"],
+      "commission": "%%1-10",
+      "category": ["teknoloji", "ev", "kitap", "oyun", "spor"]
+    },
+    {
+      "name": "Trendyol Affiliate",
+      "domains": ["trendyol.com", "ty.gl"],
+      "commission": "%1-15",
+      "category": ["moda", "ev", "kozmetik", "teknoloji"]
+    },
+    {
+      "name": "Hepsiburada Affiliate",
+      "domains": ["hepsiburada.com", "hbs.io"],
+      "commission": "%1-10",
+      "category": ["teknoloji", "ev", "oyun"]
+    },
+    {
+      "name": "YouTube Shopping",
+      "domains": ["youtube.com/shopping"],
+      "commission": "degisken",
+      "category": ["urun incelemesi", "teknoloji", "guzellik"]
+    },
+    {
+      "name": "Hostinger / VPN / Yazilim",
+      "domains": ["hostinger", "expressvpn", "nordvpn", "surshark", "namecheap", "canva.com", "notion.so", "temelplatform"],
+      "commission": "%20-100",
+      "category": ["web", "yazilim", "egitim", "verimlilik"]
+    },
+    {
+      "name": "Ortak / Sirket Linki",
+      "domains": ["bit.ly", "tinyurl", "cutt.ly", "rb.gy", "shorturl", "lnkd.in", "discord.gg"],
+      "commission": "bilinmiyor",
+      "category": ["genel"]
+    }
+  ],
+  "topic_to_program": {
+    "laptop": ["Amazon Associates", "Trendyol Affiliate", "Hepsiburada Affiliate"],
+    "telefon": ["Amazon Associates", "Trendyol Affiliate", "Hepsiburada Affiliate"],
+    "kamera": ["Amazon Associates", "Hepsiburada Affiliate"],
+    "kulaklik": ["Amazon Associates", "Trendyol Affiliate"],
+    "oyun": ["Amazon Associates", "Hepsiburada Affiliate"],
+    "yazilim": ["Hostinger / VPN / Yazilim"],
+    "hosting": ["Hostinger / VPN / Yazilim"],
+    "vpn": ["Hostinger / VPN / Yazilim"],
+    "egitim": ["Hostinger / VPN / Yazilim"],
+    "moda": ["Trendyol Affiliate"],
+    "makyaj": ["Trendyol Affiliate"],
+    "ev dekorasyon": ["Trendyol Affiliate", "Amazon Associates"],
+    "yemek": ["Amazon Associates", "Trendyol Affiliate"],
+    "spor": ["Amazon Associates", "Trendyol Affiliate"],
+    "kitap": ["Amazon Associates"]
+  },
+  "affiliate_url_patterns": [
+    "tag=", "aff=", "affiliate", "ref=", "via=", "partner=", "irkid=", "irclickid",
+    "utm_medium=affiliate", "awc=", "cjs=", "trk=", "promo_code=", "kupon",
+    "amzn.to", "a.co", "ty.gl", "hbs.io", "bit.ly", "cutt.ly", "rb.gy"
+  ]
+}

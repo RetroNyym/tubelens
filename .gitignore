@@ -1,0 +1,19 @@
+# Çıktı / çalışma zamanı verileri (depoya girmez)
+/data/store.json
+/data/quota.json
+/reports/*.html
+/reports/*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Editör / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
