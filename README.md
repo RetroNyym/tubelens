@@ -102,18 +102,49 @@ python -m tubelens panel
 - Durum ve kota: `python -m tubelens status`
 
 ```bash
-# Pro'ya geçiş (anahtar satılır / ödemeden sonra verilir)
+# Pro'ya geçiş — iki tür anahtar kabul edilir:
+#  1) Ödeme sonrası verilen ürün anahtarı (LemonSqueezy, çevrimiçi doğrulanır)
+python -m tubelens activate 38b1460a-5104-4067-a91d-77b872934d51
+#  2) Yerel/dağıtım anahtarı (TL1-..., çevrimdışı, imza ile)
 python -m tubelens activate TL1-xxxx-yyyy
 
-# Satıcı için anahtar üretme (satın alma akışı entegre edilecek)
-python -m tubelens keygen --days 365
+python -m tubelens deactivate     # lisansı bu bilgisayardan kaldırır
+python -m tubelens status         # kalan hak / lisans detayı
 ```
 
-Lisans anahtarı **HMAC-SHA256 imzalıdır ve çevrimdışı doğrulanır**; sunucu gerekmez.
-Anahtar biçimi: `TL1-<base64 payload>-<imza>` (payload içinde süre sınırı taşır).
-Kota sayaçları `data/quota.json` içinde tutulur ve kullanıcı tarafından sıfırlanabilir —
-bu, hobi ölçeğinde caydırıcılık içindir; ödeme entegrasyonu (LemonSqueezy/Paddle
-webhook doğrulaması) yol haritasındadır.
+### Lisans nasıl doğrulanıyor?
+
+| | Yerel anahtar (`TL1-…`) | Ürün anahtarı (LemonSqueezy) |
+|---|---|---|
+| Doğrulama | Çevrimdışı, HMAC-SHA256 imzası | Çevrimiçi License API (`activate` / `validate`) |
+| Süre sınırı | Anahtarın içinde taşır | Paneldeki anahtar bitiş tarihi |
+| Yeniden kontrol | Yok (imza yeterli) | En fazla **7 günde bir** tek istek |
+| İnternet yoksa | Sorun yok | **30 günlük tolerans**; sonrası ücrete düşer |
+| Kullanım hakkı | Sınırsız | Sınırsız (activation limiti varsa o kadar cihaz) |
+
+- Doğrulama `tubelens/license.py` içindedir; `activate` yanıtı ve
+  `activation_id` `data/quota.json`'a yazılır.
+- API `expired` / `disabled` dönerse lisans otomatik düşer ve kullanıcı
+  ücretsiz plana döner (sayaç yerinde kaldığı için 5 hakkı yeniden başlar).
+- Kota dosyası elle silinirse sayaç sıfırlanır; **LemonSqueezy anahtarında bu
+  işe yaramaz**, çünkü lisans sunucuda durur — asıl caydırıcılık ödeme
+  entegrasyonundan gelir.
+
+### Satıcı kurulumu (LemonSqueezy)
+
+1. [LemonSqueezy](https://lemonsqueezy.com) hesabı aç → mağaza oluştur.
+2. **Products → New product** → *Software license* tipini seç,
+   *License key generation* açık olsun (limit/bitiş ayarlayabilirsin).
+3. Müşteri ödeme yaptığında anahtar otomatik üretilir ve e-posta ile gider.
+4. Anahtarı alan müşteri `python -m tubelens activate <ANAHTAR>` der —
+   ek API anahtarı ya da webhook **gerekmez** (License API anahtarsız çalışır).
+5. Panel/kota: `python -m tubelens keygen` ile dağıtım (yerel) anahtarı da
+   üretebilirsin; ürün anahtarlarının tek avantajı sunucu tarafında iptal
+   edilebilmesidir (`deactivate`, anahtar durumu *disabled*).
+
+İsteğe bağlı: LemonSqueezy **webhook**'unu bir GitHub Action'a bağlayıp
+satışları `data/` dışındaki bir kayıt defterine yazabilirsin; müşteri tarafında
+zaten License API doğrulaması yapıldığı için bu zorunlu değildir.
 
 ---
 
@@ -127,10 +158,11 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 | `youtube.py` | Video/kanal/arama scraping, AI özeti sinyalleri, `lockupViewModel` & `videoRenderer` desteği |
 | `search.py` | Google / YouTube / Bing / DDG kontrolü + ağırlıklı skor |
 | `shopping.py` | Affiliate, disclosure, shopping etiketi analizi + fırsat skoru |
-| `quota.py` | Freemium kota + imzalı lisans anahtarı |
+| `quota.py` | Freemium kota (5 sorgu) + lisans durumu |
+| `license.py` | LemonSqueezy License API: activate / validate / deactivate, 7 gün yenileme, 30 gün tolerans |
 | `report.py` | Tek dosya HTML rapor (`reports/latest.html`) |
 | `panel.py` | Standart kütüphane HTTP paneli (harici framework yok) |
-| `cli.py` | `scan` / `report` / `panel` / `status` / `activate` / `keygen` |
+| `cli.py` | `scan` / `report` / `panel` / `status` / `activate` / `deactivate` / `keygen` |
 | `storage.py` | `data/store.json` kayıt deposu (tarama geçmişi) |
 
 İstekler kibar gecikmeli (`POLITE_DELAY = 0.8s`), tek bir User-Agent ile atılır.
@@ -150,7 +182,8 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 
 ## Yol haritası
 
-- [ ] Ödeme entegrasyonu (LemonSqueezy / Paddle) + webhook ile lisans doğrulama
+- [x] Ödeme entegrasyonu: LemonSqueezy License API ile uzaktan lisans doğrulama
+- [ ] Webhook → GitHub Action ile satış kaydı (opsiyonel)
 - [ ] Zaman serisi: skor takibi (`runs` geçmişinden trend grafiği)
 - [ ] Rakip AI görünürlüğü karşılaştırma (aynı sorguda kim önde?)
 - [ ] Toplu CSV dışa/içe aktarma ve planlı tarama (`cron`)
@@ -163,19 +196,22 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 Anahtarlar bu depo üzerinden dağıtılır:
 
 1. İletişim: [Issues](https://github.com/RetroNyym/tubelens/issues) (anahtar talebi / ödeme)
-2. Ödeme sonrası **Pro anahtarınız** iletilir.
-3. Aktivasyon (çevrimdışı, internet gerektirmez):
+2. Ödeme sonrası **Pro anahtarınız** iletilir (LemonSqueezy mağazası).
+3. Aktivasyon:
 
 ```bash
-python -m tubelens activate TL1-xxxx-yyyy
+python -m tubelens activate <ÜRÜN ANAHTARI>   # LemonSqueezy (çevrimiçi)
+python -m tubelens activate TL1-xxxx-yyyy      # yerel/dağıtım anahtarı (çevrimdışı)
+python -m tubelens deactivate                  # cihazdan kaldır
 ```
 
 Ücretsiz planda kalan hakkınızı `python -m tubelens status` ile görürsünüz.
-Satıcı tarafında anahtar üretimi: `python -m tubelens keygen --days 365`.
+Satıcı tarafında yerel anahtar üretimi: `python -m tubelens keygen --days 365`.
 
 Kodun kendisi [MIT](LICENSE) ile lisanslıdır; **anahtar üretimi ve satışı**
-lisans sahibine aittir. Kota dosyası (`data/quota.json`) kullanıcının makinesinde
-tutulur — ödeme entegrasyonu (webhook ile uzaktan doğrulama) yol haritasındadır.
+lisans sahibine aittir. Kota sayacı `data/quota.json` içinde tutulur; ürün
+anahtarlarında doğrulama LemonSqueezy üzerinde olduğu için dosya elle
+değiştirilse bile Pro erişim açılmaz.
 
 ## Katkı
 

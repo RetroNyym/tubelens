@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import DATA_DIR, ensure_dirs
+from . import license as lic_api
 
 FREE_QUERIES = 5
 QUOTA_PATH = DATA_DIR / "quota.json"
@@ -114,16 +115,71 @@ def validate_key(key: str) -> dict:
 
 
 def activate(key: str) -> dict:
-    """Anahtari dogrular ve lisansi kaydeder."""
-    payload = validate_key(key)
+    """Anahtari dogrular ve lisansi kaydeder.
+
+    * `TL1-...` bicimi  -> yerel (HMAC) anahtar, cevrimdisi dogrulanir
+    * diger bicimler     -> LemonSqueezy License API ile cevrimici aktive edilir
+    """
+    key = (key or "").strip()
+    if key.startswith(f"{_PREFIX}-"):
+        payload = validate_key(key)
+        rec: dict[str, Any] = {
+            "mode": "local",
+            "provider": "yerel-anahtar",
+            "key_suffix": key.split("-")[-1][:6],
+            "activated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "checked_at": int(time.time()),
+            "expires": payload.get("exp") or 0,
+            "expires_at": payload.get("exp") or 0,
+        }
+    else:
+        rec = lic_api.activate(key)  # LemonSqueezy (urun anahtari)
+        rec["activated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     state = load()
-    state["license"] = {
-        "key_suffix": key.split("-")[-1][:6],
-        "activated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "expires": payload.get("exp") or None,
-    }
+    state["license"] = rec
+    state["license_note"] = ""
     save(state)
-    return state["license"]
+    return rec
+
+
+def deactivate() -> tuple[bool, str]:
+    """Lisansi bu bilgisayardan kaldirir (online'da aktivasyonu da serbest birakir)."""
+    state = load()
+    lic = state.get("license")
+    if not lic:
+        return False, "Aktif lisans yok."
+    ok = True
+    if lic.get("mode") == "online":
+        ok = lic_api.deactivate(lic)
+    state["license"] = None
+    state["license_note"] = "Lisans bu bilgisayardan kaldırıldı."
+    save(state)
+    msg = "Lisans kaldırıldı."
+    if lic.get("mode") == "online" and not ok:
+        msg += " (Sunucudaki aktivasyon serbest bırakılamadı; panelde elle silebilirsiniz.)"
+    return True, msg
+
+
+def refresh() -> str:
+    """Kayitli lisansi bayatligina gore yeniden dogrular; aciklayici mesaj dondurur.
+
+    Ag hatasi tolerans icindeyse lisans korunur; API 'gecersiz' derse lisans
+    dusurulur ve kullanici ucretsiz plana geri doner.
+    """
+    state = load()
+    lic = state.get("license")
+    if not lic:
+        return ""
+    ok, updated, msg = lic_api.check_stale(lic)
+    if ok:
+        if updated is not lic:
+            state["license"] = updated
+            save(state)
+        return msg
+    state["license"] = None
+    state["license_note"] = f"Lisans düştü: {msg}"
+    save(state)
+    return state["license_note"]
 
 
 # ---------------------------------------------------------------- kota
@@ -142,10 +198,17 @@ def remaining(state: dict | None = None) -> int:
 
 
 def ensure(n: int = 1) -> None:
-    """n sorgu harcamak icin yeterli hak var mi? Yoksa QuotaExceeded."""
+    """n sorgu harcamak icin yeterli hak var mi? Yoksa QuotaExceeded.
+
+    Lisansli hesapta once bayatlik kontrolu yapilir (en fazla 7 gunde bir
+    tek cevrimici istek); lisans dusmusse kota kurallari gecerli hale gelir.
+    """
     state = load()
     if state.get("license"):
-        return
+        refresh()
+        state = load()
+        if state.get("license"):
+            return
     used = int(state.get("used", 0))
     if used + n > FREE_QUERIES:
         left = max(0, FREE_QUERIES - used)
@@ -172,31 +235,56 @@ def consume(n: int = 1, label: str = "") -> dict:
     return state
 
 
+def _day(ts: int | None) -> str:
+    if not ts:
+        return "süresiz"
+    return datetime.fromtimestamp(int(ts), timezone.utc).strftime("%Y-%m-%d")
+
+
 def status_text() -> str:
     state = load()
+    if state.get("license"):
+        refresh()
+        state = load()
     used = int(state.get("used", 0))
     lic = state.get("license")
     if lic:
-        exp = lic.get("expires")
-        exp_txt = (
-            datetime.fromtimestamp(exp, timezone.utc).strftime("%Y-%m-%d") if exp else "süresiz"
-        )
+        online = lic.get("mode") == "online"
+        checked = lic.get("checked_at")
+        checked_txt = datetime.fromtimestamp(int(checked), timezone.utc).strftime(
+            "%Y-%m-%d %H:%M UTC"
+        ) if checked else "-"
         lines = [
-            "Lisans: PRO (aktif)",
+            "Lisans: PRO (aktif)"
+            + (" — LemonSqueezy" if online else " — yerel anahtar (çevrimdışı)"),
             f"  anahtar sonu : ...{lic.get('key_suffix','')}",
-            f"  aktivasyon   : {lic.get('activated_at','')}",
-            f"  bitiş        : {exp_txt}",
+        ]
+        if online:
+            if lic.get("product"):
+                lines.append(f"  ürün         : {lic.get('product')}")
+            if lic.get("customer"):
+                lines.append(f"  müşteri      : {lic.get('customer')}")
+        lines += [
+            f"  aktivasyon   : {lic.get('activated_at','-')}",
+            f"  son doğrulama: {checked_txt}",
+            f"  bitiş        : {_day(lic.get('expires_at') or lic.get('expires'))}",
             "  AI sorgu     : sınırsız",
         ]
+        note = state.get("license_note")
+        if note:
+            lines.append(f"  not          : {note}")
         return "\n".join(lines)
     left = max(0, FREE_QUERIES - used)
-    return (
-        f"Lisans: ÜCRETSİZ PLAN\n"
-        f"  kullanılan    : {used}/{FREE_QUERIES} sorgu\n"
-        f"  kalan         : {left} sorgu\n"
-        f"  pro için      : python -m tubelens activate <ANAHTAR>\n"
-        f"  satın alma    : {PURCHASE_URL}"
-    )
+    lines = [
+        "Lisans: ÜCRETSİZ PLAN",
+        f"  kullanılan    : {used}/{FREE_QUERIES} sorgu",
+        f"  kalan         : {left} sorgu",
+        f"  pro için      : python -m tubelens activate <ANAHTAR>",
+        f"  satın alma    : {PURCHASE_URL}",
+    ]
+    if state.get("license_note"):
+        lines.append(f"  not          : {state['license_note']}")
+    return "\n".join(lines)
 
 
 def summary_line(state: dict | None = None) -> str:

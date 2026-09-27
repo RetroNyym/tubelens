@@ -5,7 +5,8 @@ Komutlar:
   python -m tubelens report
   python -m tubelens panel
   python -m tubelens status            kalan ücretsiz sorgu hakkı
-  python -m tubelens activate <ANAHTAR> pro lisansını açar
+  python -m tubelens activate <ANAHTAR> pro lisansını açar (LemonSqueezy veya yerel)
+  python -m tubelens deactivate        lisansı bu bilgisayardan kaldırır
   python -m tubelens keygen [--days N] satıcı için lisans anahtarı üretir
 """
 
@@ -17,6 +18,7 @@ from datetime import datetime, timezone
 
 from . import quota, shopping, storage
 from .config import ensure_dirs
+from .license import LicenseError
 from .search import run_checks
 from .youtube import YouTubeError, get_channel_title, get_channel_videos, get_video
 
@@ -41,6 +43,12 @@ def cmd_scan(args: argparse.Namespace) -> int:
     store = storage.load()
     target = args.target
     kw_source = [k.strip() for k in args.keywords.split(",") if k.strip()] if args.keywords else []
+
+    # lisans bayatligini gerekirse yenile (en fazla 7 gunde bir tek istek)
+    if quota.is_licensed():
+        note = quota.refresh()
+        if note:
+            print(f"[i] Lisans: {note}")
 
     # kota on kontrolu: uzun kanal cekimine girmeden once haber ver
     quota_locked = False
@@ -203,13 +211,27 @@ def cmd_status(_args: argparse.Namespace) -> int:
 def cmd_activate(args: argparse.Namespace) -> int:
     try:
         lic = quota.activate(args.key)
-    except ValueError as exc:
+    except (ValueError, LicenseError) as exc:
         print(f"Lisans hatalı: {exc}", file=sys.stderr)
+        if not str(args.key).strip().startswith("TL1-"):
+            print(
+                "  (Bu anahtar bir ürün anahtarı ise LemonSqueezy'den doğrulandı; "
+                "internet bağlantısını kontrol edin.)",
+                file=sys.stderr,
+            )
         return 4
-    print("Lisans aktif edildi (PRO).")
+    mode = "çevrimdışı" if lic.get("mode") != "online" else "LemonSqueezy üzerinden"
+    print(f"Lisans aktif edildi (PRO · {mode}).")
     print(f"  anahtar sonu: ...{lic.get('key_suffix','')}")
     print(quota.status_text())
     return 0
+
+
+def cmd_deactivate(_args: argparse.Namespace) -> int:
+    ok, msg = quota.deactivate()
+    print(msg)
+    print(quota.status_text())
+    return 0 if ok else 4
 
 
 def cmd_keygen(args: argparse.Namespace) -> int:
@@ -250,8 +272,11 @@ def main(argv: list[str] | None = None) -> int:
     p_status.set_defaults(func=cmd_status)
 
     p_act = sub.add_parser("activate", help="pro lisans anahtarını aktif et")
-    p_act.add_argument("key", help="TL1-... biçiminde lisans anahtarı")
+    p_act.add_argument("key", help="TL1-... yerel anahtar veya ürün anahtarı")
     p_act.set_defaults(func=cmd_activate)
+
+    p_deact = sub.add_parser("deactivate", help="lisansı bu bilgisayardan kaldır")
+    p_deact.set_defaults(func=cmd_deactivate)
 
     p_key = sub.add_parser("keygen", help="satıcı: lisans anahtarı üret")
     p_key.add_argument("--days", type=int, default=0, help="geçerlilik gün (0 = sınırsız)")
