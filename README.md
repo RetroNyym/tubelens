@@ -101,7 +101,7 @@ python -m tubelens panel
 # Pro'ya geçiş (anahtar satılır / ödemeden sonra verilir)
 python -m tubelens activate TL1-xxxx-yyyy
 
-# Satici icin anahtar uretme (satın alma akışı entegre edilecek)
+# Satıcı için anahtar üretme (satın alma akışı entegre edilecek)
 python -m tubelens keygen --days 365
 ```
 

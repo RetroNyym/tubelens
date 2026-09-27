@@ -4,9 +4,9 @@ Komutlar:
   python -m tubelens scan <video-url|kanal> [--keywords a,b,c]
   python -m tubelens report
   python -m tubelens panel
-  python -m tubelens status            kalan ucretsiz sorgu hakki
-  python -m tubelens activate <ANAHTAR> pro lisansini acar
-  python -m tubelens keygen [--days N] satici icin lisans anahtari uretir
+  python -m tubelens status            kalan ücretsiz sorgu hakkı
+  python -m tubelens activate <ANAHTAR> pro lisansını açar
+  python -m tubelens keygen [--days N] satıcı için lisans anahtarı üretir
 """
 
 from __future__ import annotations
@@ -50,13 +50,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
             try:
                 quota.ensure(len(kw_source))
             except quota.QuotaExceeded as exc:
-                print(f"[!] AI sorgu hakki yetersiz:\n{exc}", file=sys.stderr)
-                print("    Video/affiliate analizi yine de calisir (AI adimi atlandi).", file=sys.stderr)
+                print(f"[!] AI sorgu hakkı yetersiz:\n{exc}", file=sys.stderr)
+                print("    Video/affiliate analizi yine de çalışır (AI adımı atlandı).", file=sys.stderr)
             quota_locked = True
             kw_source = []
         elif left < len(kw_source):
             print(
-                f"[!] Hakkiniz {left} sorgu; {len(kw_source)} anahtar kelime icinden "
+                f"[!] Hakkınız {left} sorgu; {len(kw_source)} anahtar kelime içinden "
                 f"ilk {left} tanesi kontrol edilecek.",
                 file=sys.stderr,
             )
@@ -113,7 +113,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     # keyword listesi (kota on kontrolu yukarida yapildi)
     ai_checks = []
     if quota_locked:
-        print("[3/3] AI kontrolu kilitli - lisans anahtariyla acabilirsiniz")
+        print("[3/3] AI kontrolü kilitli - lisans anahtarıyla açabilirsiniz")
     elif kw_source:
         print(f"[3/3] AI gorunurluk kontrolu ({len(kw_source)} anahtar kelime)")
         for v in videos[:1]:
@@ -204,7 +204,7 @@ def cmd_activate(args: argparse.Namespace) -> int:
     try:
         lic = quota.activate(args.key)
     except ValueError as exc:
-        print(f"Lisans hatali: {exc}", file=sys.stderr)
+        print(f"Lisans hatalı: {exc}", file=sys.stderr)
         return 4
     print("Lisans aktif edildi (PRO).")
     print(f"  anahtar sonu: ...{lic.get('key_suffix','')}")
@@ -215,7 +215,7 @@ def cmd_activate(args: argparse.Namespace) -> int:
 def cmd_keygen(args: argparse.Namespace) -> int:
     key = quota.generate_key(days=args.days)
     print(key)
-    print(f"(gecerlilik: {args.days} gun)" if args.days else "(gecerlilik: sinirsiz)")
+    print(f"(geçerlilik: {args.days} gün)" if args.days else "(geçerlilik: sınırsız)")
     return 0
 
 
@@ -227,31 +227,34 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
 
-    parser = argparse.ArgumentParser(prog="tubelens", description="YouTube AI gorunurluk + affiliate araci")
+    parser = argparse.ArgumentParser(
+        prog="tubelens",
+        description="YouTube AI görünürlük + affiliate denetçisi",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_scan = sub.add_parser("scan", help="video veya kanal analiz et")
     p_scan.add_argument("target", help="video URL, video ID veya @kanal")
-    p_scan.add_argument("--keywords", help="AI kontrolu icin virgulle ayrilmis kelimeler")
-    p_scan.add_argument("--limit", type=int, default=10, help="kanal tarama limiti (varsayilan 10)")
+    p_scan.add_argument("--keywords", help="AI kontrolü için virgülle ayrılmış kelimeler")
+    p_scan.add_argument("--limit", type=int, default=10, help="kanal tarama limiti (varsayılan 10)")
     p_scan.set_defaults(func=cmd_scan)
 
-    p_rep = sub.add_parser("report", help="kayitli veriden HTML rapor uret")
+    p_rep = sub.add_parser("report", help="kayıtlı veriden HTML rapor üret")
     p_rep.set_defaults(func=cmd_report)
 
-    p_panel = sub.add_parser("panel", help="yerel web panelini ac (127.0.0.1:8787)")
-    p_panel.add_argument("--no-browser", action="store_true", help="tarayiciyi otomatik acma")
+    p_panel = sub.add_parser("panel", help="yerel web panelini aç (127.0.0.1:8787)")
+    p_panel.add_argument("--no-browser", action="store_true", help="tarayıcıyı otomatik açma")
     p_panel.set_defaults(func=cmd_panel)
 
-    p_status = sub.add_parser("status", help="kalan ucretsiz sorgu hakki / lisans bilgisi")
+    p_status = sub.add_parser("status", help="kalan ücretsiz sorgu hakkı / lisans bilgisi")
     p_status.set_defaults(func=cmd_status)
 
-    p_act = sub.add_parser("activate", help="pro lisans anahtarini aktif et")
-    p_act.add_argument("key", help="TL1-... biciminde lisans anahtari")
+    p_act = sub.add_parser("activate", help="pro lisans anahtarını aktif et")
+    p_act.add_argument("key", help="TL1-... biçiminde lisans anahtarı")
     p_act.set_defaults(func=cmd_activate)
 
-    p_key = sub.add_parser("keygen", help="satici: lisans anahtari uret")
-    p_key.add_argument("--days", type=int, default=0, help="gecerlilik gun (0 = sinirsiz)")
+    p_key = sub.add_parser("keygen", help="satıcı: lisans anahtarı üret")
+    p_key.add_argument("--days", type=int, default=0, help="geçerlilik gün (0 = sınırsız)")
     p_key.set_defaults(func=cmd_keygen)
 
     args = parser.parse_args(argv)

@@ -1,14 +1,14 @@
-"""Freemium kota + cevrimdisi lisans anahtari.
+"""Freemium kota + çevrimdışı lisans anahtarı.
 
 Model:
-  * Ucretsiz planda toplam 5 sorgu var.
-  * Bir "sorgu" = AI gorunurluk kontrolunde bakilan bir anahtar kelime
-    (scan --keywords a,b,c -> 3 sorgu). Kanal/videolarin sayisi kota yakmaz.
-  * Kota bittiginde tarama ve rapor calisir, sadece AI kontrolu durur ve
-    satin alma mesaji gosterilir (arac kismen kullanilabilir kalir).
-  * Lisans anahtari imzalidir (HMAC-SHA256) ve cevrimdisi dogrulanir;
-    sunucu gerekmez. Anahtari `python -m tubelens activate <ANAHTAR>` ile
-    girersiniz; `status` komutu kalan hakki gosterir.
+  * Ücretsiz planda toplam 5 sorgu var.
+  * Bir "sorgu" = AI görünürlük kontrolünde bakılan bir anahtar kelime
+    (scan --keywords a,b,c -> 3 sorgu). Kanal/videoların sayısı kota yakmaz.
+  * Kota bittiğinde tarama ve rapor çalışır; yalnızca AI adımı durur ve
+    satın alma mesajı gösterilir (aracın geri kalanı kullanılır kalır).
+  * Lisans anahtarı imzalıdır (HMAC-SHA256) ve çevrimdışı doğrulanır;
+    sunucu gerekmez. Anahtarı `python -m tubelens activate <ANAHTAR>` ile
+    girersiniz, `python -m tubelens status` kalan hakkınızı gösterir.
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ FREE_QUERIES = 5
 QUOTA_PATH = DATA_DIR / "quota.json"
 PURCHASE_URL = "https://github.com/RetroNyym/tubelens#lisans"  # satin alma adresi
 
-# Lisans imzalari icin anahtar. Kod acik kaynakli oldugu icin bilinirlik bir
-# sorun degildir: anahtari bilmek yeni anahtar uretmenize izin verir, ancak
-# bunu yapabilmek icin zaten kodu degistirmis olursunuz (self-host model).
+# Lisans imzaları için anahtar. Kod açık kaynaklı olduğu için bu değerin
+# bilinirliği sorun değildir: anahtarı bilip yeni bir anahtar üretebilmek için
+# zaten kodu değiştirmiş olursunuz (self-host modeli).
 _SECRET = b"tubelens.freemium.v1"
 _PREFIX = "TL1"
 
@@ -99,17 +99,17 @@ def validate_key(key: str) -> dict:
     key = (key or "").strip()
     parts = key.split("-")
     if len(parts) != 3 or parts[0] != _PREFIX:
-        raise ValueError("Anahtar bicimi hatali (ornegin TL1-...-... olmali)")
+        raise ValueError("Anahtar biçimi hatalı (ör. TL1-...-... olmalı)")
     body, sig = parts[1], parts[2]
     if not hmac.compare_digest(sig, _sign(body.encode("ascii"))):
-        raise ValueError("Anahtar imzasi gecersiz")
+        raise ValueError("Anahtar imzası geçersiz")
     try:
         payload = json.loads(_b64d(body))
     except (ValueError, json.JSONDecodeError) as exc:
-        raise ValueError("Anahtar icerigi okunamadi") from exc
+        raise ValueError("Anahtar içeriği okunamadı") from exc
     exp = int(payload.get("exp") or 0)
     if exp and exp < time.time():
-        raise ValueError("Anahtarin suresi dolmus")
+        raise ValueError("Anahtarın süresi dolmuş")
     return payload
 
 
@@ -150,11 +150,11 @@ def ensure(n: int = 1) -> None:
     if used + n > FREE_QUERIES:
         left = max(0, FREE_QUERIES - used)
         raise QuotaExceeded(
-            f"Ucretsiz sorgu hakkiniz bitti ({used}/{FREE_QUERIES} kullanildi, "
+            f"Ücretsiz sorgu hakkınız bitti ({used}/{FREE_QUERIES} kullanıldı, "
             f"kalan {left}).\n"
-            f"Pro surume gecmek icin lisans anahtarinizi girin:\n"
+            f"Pro sürüme geçmek için lisans anahtarınızı girin:\n"
             f"  python -m tubelens activate <ANAHTAR>\n"
-            f"Satin alma: {PURCHASE_URL}"
+            f"Satın alma: {PURCHASE_URL}"
         )
 
 
@@ -179,23 +179,23 @@ def status_text() -> str:
     if lic:
         exp = lic.get("expires")
         exp_txt = (
-            datetime.fromtimestamp(exp, timezone.utc).strftime("%Y-%m-%d") if exp else "suresiz"
+            datetime.fromtimestamp(exp, timezone.utc).strftime("%Y-%m-%d") if exp else "süresiz"
         )
         lines = [
             "Lisans: PRO (aktif)",
             f"  anahtar sonu : ...{lic.get('key_suffix','')}",
             f"  aktivasyon   : {lic.get('activated_at','')}",
-            f"  bitis        : {exp_txt}",
-            "  AI sorgu     : sinirsiz",
+            f"  bitiş        : {exp_txt}",
+            "  AI sorgu     : sınırsız",
         ]
         return "\n".join(lines)
     left = max(0, FREE_QUERIES - used)
     return (
-        f"Lisans: UCRETSIZ PLAN\n"
-        f"  kullanilan    : {used}/{FREE_QUERIES} sorgu\n"
+        f"Lisans: ÜCRETSİZ PLAN\n"
+        f"  kullanılan    : {used}/{FREE_QUERIES} sorgu\n"
         f"  kalan         : {left} sorgu\n"
-        f"  pro icin      : python -m tubelens activate <ANAHTAR>\n"
-        f"  satin alma    : {PURCHASE_URL}"
+        f"  pro için      : python -m tubelens activate <ANAHTAR>\n"
+        f"  satın alma    : {PURCHASE_URL}"
     )
 
 
@@ -203,6 +203,6 @@ def summary_line(state: dict | None = None) -> str:
     """CLI altinda kisa kota gosterimi icin."""
     state = state if state is not None else load()
     if state.get("license"):
-        return "kota: PRO (sinirsiz)"
+        return "kota: PRO (sınırsız)"
     used = int(state.get("used", 0))
-    return f"kota: {max(0, FREE_QUERIES - used)}/{FREE_QUERIES} sorgu kaldi"
+    return f"kota: {max(0, FREE_QUERIES - used)}/{FREE_QUERIES} sorgu kaldı"
