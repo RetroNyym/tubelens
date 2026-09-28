@@ -333,7 +333,7 @@ function render(j){{
   document.getElementById('cards').innerHTML=`
    <div class="card" style="border-color:var(--bad)"><div class="label">Tahmini Aylık Kaçak</div>
     <div class="value" style="color:var(--bad)">${{lk.total_leak?('$'+lk.total_leak):'$0'}}</div>
-    <div class="hint">${{lk.total_potential?('$'+lk.total_potential+' potansiyel · ':'')}}${{lk.videos_at_risk||0}} riskli video</div></div>
+    <div class="hint">${{lk.total_potential?('$'+lk.total_potential+' potansiyel · '):''}}${{lk.videos_at_risk||0}} riskli video</div></div>
    <div class="card"><div class="label">Fırsat Skoru</div><div class="value">${{s.avg_score??0}}</div></div>
    <div class="card"><div class="label">Video</div><div class="value">${{s.videos??0}}</div></div>
    <div class="card"><div class="label">Affiliate Link</div><div class="value">${{s.total_affiliate_links??0}}</div></div>
@@ -349,13 +349,13 @@ function render(j){{
            rec.map(r=>'<div style="margin:8px 0;padding:10px;background:#1e222b;border-radius:8px">'+
              '<b>'+r.title+'</b><div class="sub" style="white-space:pre-line;margin-top:4px">'+r.text+'</div>'+
              (r.copy?'<div style="margin-top:8px"><textarea readonly id="copy'+i+'-'+r.id+'" style="width:100%;height:64px;font-size:12px;background:#14161c;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px">'+r.copy+'</textarea>'+
-               '<button id="btn-copy'+i+'-'+r.id+'" onclick="copyText(\'copy'+i+'-'+r.id+'\')" style="margin-top:6px">Panoya kopyala</button></div>':'')+
+               '<button id="btn-copy'+i+'-'+r.id+'" data-copy="copy'+i+'-'+r.id+'" onclick="copyText(this.dataset.copy)" style="margin-top:6px">Panoya kopyala</button></div>':'')+
            '</div>').join('')+'</div></td></tr>';
        }}
        const leak=v.leak>0?'<b style="color:var(--bad)">$'+v.leak+'</b>':'<span class="sub">$0</span>';
        return '<tr><td><a href="https://www.youtube.com/watch?v='+v.video_id+'" target="_blank">'+(v.title||'').slice(0,60)+'</a>'+
          '<div class="sub">'+(v.views||0)+' izlenme '+
-         '<button onclick="cloneVideo(\''+v.video_id+'\')" title="Bu videonun yapısını klonla → özgün senaryo" style="margin-left:8px">▶ Klonla</button></div></td>'+
+         '<button data-vid="'+v.video_id+'" onclick="cloneVideo(this.dataset.vid)" title="Bu videonun yapısını klonla → özgün senaryo" style="margin-left:8px">▶ Klonla</button></div></td>'+
          '<td>'+bar(v.opportunity_score)+'</td>'+
          '<td>'+leak+'</td>'+
          '<td>'+(v.affili||[]).length+'</td>'+

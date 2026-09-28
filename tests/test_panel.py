@@ -76,6 +76,29 @@ def test_clone_requires_url(server):
     assert "URL" in body["error"] or "url" in body["error"]
 
 
+def test_index_script_syntax(server):
+    """Panel JS'i sozdizimi hatasi icin (tarayici sekme hatalarini onler)."""
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+
+    node = shutil.which("node")
+    if node is None:
+        import pytest
+
+        pytest.skip("node yok")
+    status, body, _ = _get(f"{server}/")
+    assert status == 200
+    match = re.search(rb"(?s)<script>(.*)</script>", body)
+    assert match, "script blogu yok"
+    with tempfile.NamedTemporaryFile("wb", suffix=".js", delete=False) as fh:
+        fh.write(match.group(1))
+        path = fh.name
+    proc = subprocess.run([node, "--check", path], capture_output=True)
+    assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+
+
 def test_video_requires_topic(server):
     body = _post(f"{server}/api/video", {"lang": "tr"})
     assert body["ok"] is False
