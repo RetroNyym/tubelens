@@ -140,6 +140,23 @@ python -m pytest
 Gereksinim: **Python 3.11+**, internet erişimi. YouTube Data API anahtarı **gerekmez**.
 Video kiti için de anahtar gerekmez (ffmpeg `imageio-ffmpeg` ile otomatik gelir).
 
+### Tek dosya exe (Windows · kurulum gerektirmez)
+
+GitHub Releases'tan **`TubeLens.exe`** indir → masaüstüne koy → **çift tıkla**:
+
+- Panel otomatik açılır, tarayıcıda arayüz gelir (Tarama · Video Üret · Lisans sekmeleri)
+- Panel zaten açıksa ikinci tıklama mevcut oturumu tarayıcıda gösterir
+- Veriler `%LOCALAPPDATA%\TubeLens` altına yazılır (Program Files'a gerek yok)
+- CLI da aynı exe'den: `TubeLens.exe video "konu"` · `TubeLens.exe scan @kanal`
+- Gereksinim: internet (senaryo/LLM + seslendirme + görsel kaynakları)
+
+Kendi exe'nizi üretmek için:
+
+```bash
+pip install pyinstaller
+pyinstaller tubelens.spec        # -> dist/TubeLens.exe (~84 MB, onefile + ikon)
+```
+
 ---
 
 ## Kullanım

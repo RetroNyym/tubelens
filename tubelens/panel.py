@@ -476,6 +476,16 @@ def _state_payload() -> dict:
     }
 
 
+def _cli_cmd(*args: str) -> list[str]:
+    """Alt surec CLI komutu. Frozen exe'de `-m tubelens` calismadigi icin
+    argumanlar dogrudan exe'ye verilir."""
+    import sys
+
+    if getattr(sys, "frozen", False):
+        return [sys.executable, *args]
+    return [sys.executable, "-m", "tubelens", *args]
+
+
 def _run_scan(target: str, keywords: str, limit: int) -> None:
     import subprocess
     import sys
@@ -483,7 +493,7 @@ def _run_scan(target: str, keywords: str, limit: int) -> None:
     STATE.busy = True
     STATE.finished = False
     STATE.log = f"Tarama başladı: {target}"
-    cmd = [sys.executable, "-m", "tubelens", "scan", target, "--limit", str(limit)]
+    cmd = _cli_cmd("scan", target, "--limit", str(limit))
     if keywords:
         cmd += ["--keywords", keywords]
     from .config import ROOT
@@ -511,7 +521,7 @@ def _run_clone(url: str) -> None:
 
     STATE.clone_busy = True
     STATE.clone_log = f"Klonlanıyor: {url}"
-    cmd = [sys.executable, "-m", "tubelens", "clone", url]
+    cmd = _cli_cmd("clone", url)
     try:
         proc = subprocess.run(
             cmd, cwd=str(ROOT), capture_output=True, text=True,
@@ -547,7 +557,7 @@ def _run_activate(key: str) -> None:
     STATE.activate_log = f"Deneniyor: {key[:12]}…"
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "tubelens", "activate", key],
+            _cli_cmd("activate", key),
             cwd=str(ROOT), capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=45,
         )
@@ -582,10 +592,10 @@ def _run_video(params: dict) -> None:
         from .config import DATA_DIR
 
         draft_path = DATA_DIR / "clone_draft.json"
-        cmd = [
-            sys.executable, "-m", "tubelens", "video",
+        cmd = _cli_cmd(
+            "video",
             "--script-file", str(draft_path), "--out", str(out_dir),
-        ]
+        )
         if draft_path.exists():
             try:
                 draft = json.loads(draft_path.read_text(encoding="utf-8"))
@@ -595,7 +605,7 @@ def _run_video(params: dict) -> None:
             except (json.JSONDecodeError, OSError):
                 pass
     else:
-        cmd = [sys.executable, "-m", "tubelens", "video", str(params.get("topic", "")), "--out", str(out_dir)]
+        cmd = _cli_cmd("video", str(params.get("topic", "")), "--out", str(out_dir))
     opt_map = {
         "lang": "--lang",
         "aspect": "--aspect",
@@ -802,8 +812,29 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve(host: str = "127.0.0.1", port: int = 8787, open_browser: bool = True) -> None:
     ensure_dirs()
-    server = ThreadingHTTPServer((host, port), Handler)
     url = f"http://{host}:{port}"
+    # Windows'ta SO_REUSEADDR nedeniyle bind hata vermeyebilir; once gercek
+    # dinleyici var mi kontrol et (zaten calisan panelde ikinci acilis iciin).
+    import socket
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        busy = probe.connect_ex((host, port)) == 0
+    finally:
+        probe.close()
+    if busy:
+        print(f"Panel zaten calisiyor: {url}")
+        if open_browser:
+            try:
+                webbrowser.open(url)
+            except Exception:  # noqa: BLE001
+                pass
+        return
+    try:
+        server = ThreadingHTTPServer((host, port), Handler)
+    except OSError as exc:
+        print(f"Panel baslatilamadi (port {port}): {exc}")
+        return
     print(f"TubeLens panel: {url}")
     print("Durdurmak icin Ctrl+C")
     if open_browser:

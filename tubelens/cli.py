@@ -274,7 +274,7 @@ def cmd_report(_args: argparse.Namespace) -> int:
 def cmd_panel(args: argparse.Namespace) -> int:
     from .panel import serve
 
-    serve(host="127.0.0.1", port=8787, open_browser=not args.no_browser)
+    serve(host="127.0.0.1", port=getattr(args, "port", 8787), open_browser=not args.no_browser)
     return 0
 
 
@@ -591,6 +591,9 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     argv = _fix_dash_positional(list(sys.argv[1:] if argv is None else argv))
+    if not argv:
+        # argumansiz acilis (GUI exe: cift tikla) paneli baslatir
+        argv = ["panel"]
 
     from . import __version__
 
@@ -612,6 +615,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p_panel = sub.add_parser("panel", help="yerel web panelini aç (127.0.0.1:8787)")
     p_panel.add_argument("--no-browser", action="store_true", help="tarayıcıyı otomatik açma")
+    p_panel.add_argument("--port", type=int, default=8787, help="panel portu (varsayılan 8787)")
     p_panel.set_defaults(func=cmd_panel)
 
     p_status = sub.add_parser("status", help="kalan ücretsiz sorgu hakkı / lisans bilgisi")

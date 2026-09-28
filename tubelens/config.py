@@ -1,15 +1,27 @@
 """Yollar, basliklar ve sabitler."""
 
 import json
+import os
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# PyInstaller ile paketlendiginde (frozen) kaynak klasoru yazilabilir degildir;
+# veri %LOCALAPPDATA%\TubeLens altina yazilir. Kaynak koddaysa reposu yanina.
+if getattr(sys, "frozen", False):
+    ROOT = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "TubeLens"
+else:
+    ROOT = Path(__file__).resolve().parent.parent
+
 DATA_DIR = ROOT / "data"
 REPORT_DIR = ROOT / "reports"
 VIDEO_DIR = ROOT / "videos"
 STORE_PATH = DATA_DIR / "store.json"
 VIDEO_CONFIG_PATH = DATA_DIR / "video_config.json"
-CATALOG_PATH = Path(__file__).resolve().parent / "data" / "product_catalog.json"
+CATALOG_PATH = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / (
+    "tubelens/data/product_catalog.json"
+    if getattr(sys, "frozen", False)
+    else "data/product_catalog.json"
+)
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
