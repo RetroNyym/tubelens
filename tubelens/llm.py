@@ -15,7 +15,6 @@ import requests
 
 JSON_ENDPOINTS = (
     "https://text.pollinations.ai/openai",
-    "https://gen.pollinations.ai/v1/chat/completions",
 )
 TEXT_ENDPOINT = "https://text.pollinations.ai/"
 
@@ -38,6 +37,25 @@ class LLMError(RuntimeError):
     pass
 
 
+def _nested_content(text: str) -> str:
+    """'{"role":...,"content":"..."}' gibi nesne metinlerinden content'i cikarir."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return ""
+    if isinstance(data, dict):
+        inner = data.get("content")
+        if isinstance(inner, str) and inner.strip():
+            return inner.strip()
+        choices = data.get("choices")
+        if isinstance(choices, list) and choices:
+            msg = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+            inner = msg.get("content")
+            if isinstance(inner, str) and inner.strip():
+                return inner.strip()
+    return ""
+
+
 def chat(
     prompt: str,
     system: str | None = None,
@@ -58,6 +76,9 @@ def chat(
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
+        # GPT-OSS reasoning modunda uzun dusunme alani content'i sikiyor ve
+        # yanit bos kalabiliyor; low ile reasoning kisalir, content'e yer acilir.
+        "reasoning_effort": "low",
     }
     headers = dict(HEADERS)
     if api_key:
@@ -83,15 +104,28 @@ def chat(
                 last_err = LLMError(f"HTTP {resp.status_code} -> {url}")
                 continue
             try:
-                content = resp.json()["choices"][0]["message"]["content"]
+                d = resp.json()
+                content = d["choices"][0]["message"]["content"]
             except (ValueError, KeyError, IndexError, TypeError) as exc:
                 last_err = exc
                 continue
             content = str(content).strip() if content else ""
             if not content:
-                last_err = LLMError("bos yanit geldi")
+                reasoning = ""
+                try:
+                    reasoning = str(d["choices"][0]["message"].get("reasoning") or "")
+                except (KeyError, IndexError, TypeError):
+                    pass
+                last_err = LLMError(
+                    "bos yanit geldi"
+                    + (f" (reasoning {len(reasoning)} karakter doldu)" if reasoning else "")
+                )
                 continue
             if content.startswith('{"role"'):
+                # model nesne dondurdu: icinde gercek content olabilir
+                inner = _nested_content(content)
+                if inner:
+                    return inner
                 last_err = LLMError("model mesaj nesnesi dondurdu (bos icerik)")
                 continue
             return content
@@ -101,8 +135,16 @@ def chat(
             if resp.status_code == 429:
                 last_err = LLMError("kuyruk dolu (429)")
                 time.sleep(8)
-            elif resp.status_code == 200 and text and not text.startswith('{"role"'):
-                return text
+            elif resp.status_code == 200 and text:
+                if text.startswith('{"role"'):
+                    inner = _nested_content(text)
+                    if inner:
+                        return inner
+                    last_err = LLMError("duz metin: bos icerikli mesaj nesnesi")
+                elif text.lstrip().startswith("{"):
+                    return text  # duz metin JSON senaryo -> extract edilir
+                else:
+                    last_err = LLMError(f"duz metin JSON degil (HTTP 200, {len(text)} karakter)")
             else:
                 last_err = LLMError(f"duz metin HTTP {resp.status_code}")
         except requests.RequestException as exc:
@@ -283,9 +325,10 @@ def _request_script(
 ) -> dict[str, Any]:
     """Prompt ile senaryo JSON'u iste; kesik yanit / 429 icin token butceli retry."""
     # Yanit sinirinda kesilmesin: hedef kelimeye gore token butcesi ver.
-    # Not: model reasoning modunda calisir; butce reasoning + cevap toplamidir.
-    # Servis uygulanan ust sinir ~1600; ustu HTTP hatasi donduruyor.
-    token_budget = min(1600, target_words * 8 + 500)
+    # Not: reasoning_effort=low ile dusunme alani kisalir; butce content icin
+    # alan acar. Servis ~4000'e kadar kabul ediyor (1600 ustu gectigimizde
+    # HTTP hatasi idi; simdi low effort ile zaten oturuyor).
+    token_budget = min(2400, target_words * 8 + 600)
     last_err: LLMError | None = None
     for attempt in range(10):
         attempt_prompt = prompt if attempt == 0 else f"{prompt}\nTalep: {uuid.uuid4().hex[:8]}"
