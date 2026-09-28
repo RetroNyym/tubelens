@@ -2,7 +2,13 @@
 
 import pytest
 
-from tubelens.llm import LLMError, _as_list, _extract_json, _normalize
+from tubelens.llm import (
+    LLMError,
+    _as_list,
+    _extract_json,
+    _normalize,
+    _repair_json,
+)
 
 
 def test_extract_json_code_fence():
@@ -22,6 +28,36 @@ def test_extract_json_invalid_raises():
         _extract_json("kesilmis { json")
     with pytest.raises(LLMError):
         _extract_json("[1, 2, 3]")
+
+
+def test_repair_unterminated_string():
+    raw = '{"title": "Deneme", "script": "Bu metin kesis'
+    data = _extract_json(raw)
+    assert data["title"] == "Deneme"
+    assert data["script"].startswith("Bu metin kesis")
+
+
+def test_repair_missing_closers():
+    raw = '{"title": "X", "script": "Y", "video_terms": ["a", "b"'
+    data = _extract_json(raw)
+    assert data["video_terms"] == ["a", "b"]
+
+
+def test_repair_trailing_comma():
+    raw = '{"title": "X", "script": "Y",}'
+    data = _extract_json(raw)
+    assert data["script"] == "Y"
+
+
+def test_repair_gives_up_on_garbage():
+    assert _repair_json("{ json") is None
+    assert _repair_json("sadece metin") is None
+    assert _repair_json("[1, 2, 3]") is None
+
+
+def test_repair_idempotent_on_valid_json():
+    valid = '{"title": "A", "script": "B"}'
+    assert _repair_json(valid) == {"title": "A", "script": "B"}
 
 
 def test_as_list():
