@@ -155,19 +155,81 @@ def parse_number(text: str) -> int:
     return int(number * mult)
 
 
+def _player_response(html: str) -> dict:
+    """HTML'den ytInitialPlayerResponse JSON'unu ayiklar (fallback'li)."""
+    try:
+        return _extract_json(html, "ytInitialPlayerResponse = ")
+    except YouTubeError:
+        match = re.search(r"ytInitialPlayerResponse\s*=\s*(\{)", html)
+        if not match:
+            raise YouTubeError("ytInitialPlayerResponse bulunamadi (video gizli/silinmis olabilir)")
+        return _extract_json(html[match.start() :], "ytInitialPlayerResponse = ")
+
+
+def get_transcript(url_or_id: str, lang: str = "tr") -> str:
+    """Video altyazisini duz metin olarak dondurur; yoksa bos string.
+
+    - Once istenen dilde altyazi aranir, yoksa elle yazilmis (kind'siz) altyazi,
+      o da yoksa ilk track (otomatik asr dahil) kullanilir.
+    - Cikti klon senaryolari icin yeterli olacak sekilde sinirlanir.
+    """
+    vid = extract_video_id(url_or_id)
+    html = _get(f"https://www.youtube.com/watch?v={vid}")
+    player = _player_response(html)
+    tracks = (
+        ((player.get("captions") or {}).get("playerCaptionsTracklistRenderer") or {}).get("captionTracks")
+        or []
+    )
+    if not tracks:
+        return ""
+
+    chosen = None
+    for track in tracks:
+        if str(track.get("languageCode", "")).startswith(lang):
+            chosen = track
+            break
+    if chosen is None:
+        for track in tracks:
+            if not track.get("kind"):  # kind=asr otomatik altyazi demek
+                chosen = track
+                break
+    if chosen is None:
+        chosen = tracks[0]
+    base_url = chosen.get("baseUrl")
+    if not base_url:
+        return ""
+
+    try:
+        resp = requests.get(
+            base_url,
+            params={"fmt": "json3"},
+            headers=HEADERS,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException:
+        return ""
+    if resp.status_code != 200:
+        return ""
+    try:
+        data = resp.json()
+    except ValueError:
+        return ""
+
+    chunks: list[str] = []
+    for event in data.get("events", []):
+        segments = event.get("segs")
+        if segments:
+            chunks.append("".join(seg.get("utf8", "") for seg in segments))
+    text = " ".join(" ".join(chunks).split())
+    return text[:6000]
+
+
 def get_video(url_or_id: str) -> dict[str, Any]:
     """Video temel bilgisi + aciklama + baglantilar + shopping etiketleri."""
     vid = extract_video_id(url_or_id)
     html = _get(f"https://www.youtube.com/watch?v={vid}")
 
-    try:
-        player = _extract_json(html, "ytInitialPlayerResponse = ")
-    except YouTubeError:
-        # Bazi videolarda bu deyim bos; buyuk olasilikla HTML'de baska bicimdedir
-        match = re.search(r"ytInitialPlayerResponse\s*=\s*(\{)", html)
-        if not match:
-            raise YouTubeError("ytInitialPlayerResponse bulunamadi (video gizli/silinmis olabilir)")
-        player = _extract_json(html[match.start() :], "ytInitialPlayerResponse = ")
+    player = _player_response(html)
     details = player.get("videoDetails", {})
     micro = player.get("microformat", {}).get("playerMicroformatRenderer", {})
 

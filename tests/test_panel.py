@@ -56,6 +56,24 @@ def test_state_payload_shape(server):
         assert key in data
     assert "busy" in data["video"]
     assert "result" in data["video"]
+    # klon + gelir kacagi USP alanlari
+    assert "clone" in data and "draft" in data["clone"]
+    assert "leak" in data and "total_leak" in data["leak"]
+
+
+def test_index_has_usp_buttons(server):
+    status, body, _ = _get(f"{server}/")
+    text = body.decode("utf-8")
+    assert status == 200
+    assert "Klonla" in text  # tarama -> uretim hatti
+    assert "$ Kaçak" in text  # gelir kacak sutunu
+    assert "Panoya kopyala" in text  # aksiyon recetesi
+
+
+def test_clone_requires_url(server):
+    body = _post(f"{server}/api/clone", {})
+    assert body["ok"] is False
+    assert "URL" in body["error"] or "url" in body["error"]
 
 
 def test_video_requires_topic(server):

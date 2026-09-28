@@ -171,6 +171,76 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_clone(args: argparse.Namespace) -> int:
+    """Rakip videonun yapisini ogrenip ozgun klon senaryosu uretir.
+
+    Cikti: data/clone_draft.json  -> `video --script-file` veya panel Klonla akisi kullanir.
+    """
+    ensure_dirs()
+    from . import llm, youtube
+
+    print(f"[1/3] Kaynak video cekiliyor: {args.url}")
+    try:
+        source = youtube.get_video(args.url)
+    except youtube.YouTubeError as exc:
+        print(f"  HATA: {exc}", file=sys.stderr)
+        return 2
+    print(f"      {source.get('title', '')[:70]} ({source.get('views', 0)} izlenme)")
+
+    print("[2/3] Transcript aliniyor (best effort)")
+    try:
+        transcript = youtube.get_transcript(args.url, lang=args.lang)
+    except youtube.YouTubeError:
+        transcript = ""
+    print(
+        f"      {len(transcript)} karakter"
+        + ("" if transcript else " (yok - basliga gore klonlanacak)")
+    )
+
+    duration = args.duration
+    if not duration:
+        length = int(source.get("length_seconds") or 45)
+        duration = max(30, min(180, round(length * 0.9)))
+    source["transcript"] = transcript
+
+    print(f"[3/3] Klon senaryo uretiliyor (ayni yapi + ozgun aci, ~{duration} sn)")
+    try:
+        script = llm.clone_script(source, aspect=args.aspect, duration=duration, lang=args.lang)
+    except llm.LLMError as exc:
+        print(f"  HATA: {exc}", file=sys.stderr)
+        return 3
+
+    draft = {
+        "source": {
+            "id": source.get("id", ""),
+            "url": source.get("url", ""),
+            "title": source.get("title", ""),
+            "channel": source.get("channel", ""),
+            "views": source.get("views", 0),
+        },
+        "script": script,
+        "aspect": args.aspect,
+        "duration": duration,
+        "lang": args.lang,
+        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+    }
+    path = config.DATA_DIR / "clone_draft.json"
+    path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    print()
+    print("=" * 60)
+    print(f"Kaynak  : {draft['source']['title'][:60]}")
+    print(f"Klon    : {script['title']}")
+    print(f"Senaryo : {len(script['script'].split())} kelime | {len(script['paragraphs'])} paragraf")
+    print(f"Draft   : {path}")
+    print(
+        f"Uretim  : python -m tubelens video \"{script['title']}\" "
+        f"--script-file {path} --aspect {args.aspect} --duration {duration}"
+    )
+    print("=" * 60)
+    return 0
+
+
 def video_list(videos: list) -> list:
     return videos
 
@@ -299,26 +369,44 @@ def cmd_video(args: argparse.Namespace) -> int:
     elevenlabs_key = (args.elevenlabs_key or vconf.get("elevenlabs_api_key") or "").strip()
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    # Senaryo: dosyadan (klon/clone_draft) veya LLM ile
+    script: dict = {}
+    if args.script_file:
+        spath = Path(args.script_file)
+        try:
+            draft = json.loads(spath.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"  HATA: script-file okunamadi: {exc}", file=sys.stderr)
+            return 2
+        script = draft.get("script") if isinstance(draft.get("script"), dict) else draft
+        if not isinstance(script, dict) or not script.get("script"):
+            print("  HATA: script-file gecerli senaryo icerigi icermiyor", file=sys.stderr)
+            return 2
+        if not args.topic:
+            args.topic = str(script.get("title") or "klon-senaryo")
+        print(f"[1/5] Senaryo dosyadan yuklendi: {spath.name} (LLM adimi atlandi)")
+    else:
+        print(f"[1/5] Senaryo uretiliyor (Pollinations - anahtarsiz): {args.topic}")
+        try:
+            script = llm.generate_script(
+                args.topic,
+                lang=args.lang,
+                duration=args.duration,
+                aspect=args.aspect,
+                style=args.style,
+                api_key=str(vconf.get("pollinations_api_key") or ""),
+            )
+        except llm.LLMError as exc:
+            print(f"  HATA: {exc}", file=sys.stderr)
+            return 2
+
     out_dir = (
         Path(args.out)
         if args.out
         else config.VIDEO_DIR / f"{stamp}-{_slugify(args.topic)}"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"[1/5] Senaryo uretiliyor (Pollinations - anahtarsiz): {args.topic}")
-    try:
-        script = llm.generate_script(
-            args.topic,
-            lang=args.lang,
-            duration=args.duration,
-            aspect=args.aspect,
-            style=args.style,
-            api_key=str(vconf.get("pollinations_api_key") or ""),
-        )
-    except llm.LLMError as exc:
-        print(f"  HATA: {exc}", file=sys.stderr)
-        return 2
     (out_dir / "script.json").write_text(
         json.dumps(script, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -326,6 +414,21 @@ def cmd_video(args: argparse.Namespace) -> int:
     print(f"      Baslik: {script['title']}")
 
     if args.script_only:
+        (out_dir / "meta.json").write_text(
+            json.dumps(
+                {
+                    "title": script["title"],
+                    "description": script.get("description", ""),
+                    "tags": script.get("tags", []),
+                    "hashtags": script.get("hashtags", []),
+                    "duration_sec": 0,
+                    "tts_engine": "",
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         print(f"Senaryo hazir: {out_dir}")
         return 0
 
@@ -430,6 +533,44 @@ def cmd_video(args: argparse.Namespace) -> int:
     return 0
 
 
+_DASH_COMMANDS = {
+    "clone": {"--lang", "--aspect", "--duration"},
+    "scan": {"--keywords", "--limit"},
+}
+
+
+def _fix_dash_positional(argv: list[str]) -> list[str]:
+    """'-kX...' gibi gorunen video ID'lerinin option sanilmasini onler.
+
+    YouTube ID'ler '-' ile baslayabilir; argparse bunlari taninmayan option
+    sanir. clone/scan komutlarinda boyle bir ID tespit edilirse option'lar
+    one alinir ve ID, '--' ayiricisi arkasina yerlestirilir.
+    """
+    if not argv or argv[0] not in _DASH_COMMANDS:
+        return argv
+    options = _DASH_COMMANDS[argv[0]]
+    option_parts: list[str] = []
+    positionals: list[str] = []
+    i = 1
+    while i < len(argv):
+        token = argv[i]
+        if token in options and i + 1 < len(argv):
+            option_parts.append(token)
+            option_parts.append(argv[i + 1])
+            i += 2
+            continue
+        if token.startswith("--"):
+            option_parts.append(token)
+            i += 1
+            continue
+        positionals.append(token)
+        i += 1
+    has_dash_id = any(p.startswith("-") and not p.startswith("--") for p in positionals)
+    if not has_dash_id:
+        return argv
+    return [argv[0]] + option_parts + ["--"] + positionals
+
+
 def main(argv: list[str] | None = None) -> int:
     # Windows konsolu (cp1254/TR) UTF-8 karakterleri basamayabiliyor
     for stream in (sys.stdout, sys.stderr):
@@ -437,6 +578,8 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
         except (AttributeError, ValueError):
             pass
+
+    argv = _fix_dash_positional(list(sys.argv[1:] if argv is None else argv))
 
     from . import __version__
 
@@ -476,11 +619,31 @@ def main(argv: list[str] | None = None) -> int:
     p_key.add_argument("--csv", help="anahtarları CSV dosyasına ekle (müşteriye gönderim listesi)")
     p_key.set_defaults(func=cmd_keygen)
 
+    p_clone = sub.add_parser(
+        "clone", help="rakip videonun yapısını klonlayıp özgün senaryo üret"
+    )
+    p_clone.add_argument("url", help="kaynak video URL veya ID")
+    p_clone.add_argument("--lang", default="tr", help="senaryo dili (varsayılan tr)")
+    p_clone.add_argument(
+        "--aspect", choices=["9:16", "16:9", "1:1"], default="9:16", help="video formatı"
+    )
+    p_clone.add_argument(
+        "--duration", type=int, default=0,
+        help="hedef süre sn (0 = kaynak videonun süresine göre)",
+    )
+    p_clone.set_defaults(func=cmd_clone)
+
     p_video = sub.add_parser(
         "video",
         help="MPT tarzı tam video üret (senaryo + görüntü + ses + altyazı)",
     )
-    p_video.add_argument("topic", help="video konusu / başlık fikri")
+    p_video.add_argument(
+        "topic", nargs="?", default="", help="video konusu / başlık fikri (--script-file ile opsiyonel)"
+    )
+    p_video.add_argument(
+        "--script-file",
+        help="senaryoyu dosyadan oku (LLM adımını atlar; örn. data/clone_draft.json)",
+    )
     p_video.add_argument("--lang", default="tr", help="senaryo dili (varsayılan tr)")
     p_video.add_argument(
         "--duration", type=int, default=45, help="hedef seslendirme süresi (sn)"
@@ -515,6 +678,8 @@ def main(argv: list[str] | None = None) -> int:
     p_video.set_defaults(func=cmd_video)
 
     args = parser.parse_args(argv)
+    if args.cmd == "video" and not args.topic and not args.script_file:
+        parser.error("video için `topic` veya `--script-file` gerekli")
     return args.func(args)
 
 

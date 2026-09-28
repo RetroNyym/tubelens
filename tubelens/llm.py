@@ -267,6 +267,44 @@ def _normalize(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_JSON_SCHEMA = (
+    '{"title":"...", "script":"paragraflari iki satir boslukla ayir", '
+    '"video_terms":["ingilizce stok goruntu kelimesi"], '
+    '"description":"...", "tags":["..."], "hashtags":["..."]}\n'
+    "video_terms 6-10 adet Ingilizce stok goruntu arama kelimesi olsun."
+)
+
+
+def _request_script(
+    prompt: str,
+    system: str,
+    target_words: int,
+    api_key: str = "",
+) -> dict[str, Any]:
+    """Prompt ile senaryo JSON'u iste; kesik yanit / 429 icin token butceli retry."""
+    # Yanit sinirinda kesilmesin: hedef kelimeye gore token butcesi ver.
+    # Not: model reasoning modunda calisir; butce reasoning + cevap toplamidir.
+    # Servis uygulanan ust sinir ~1600; ustu HTTP hatasi donduruyor.
+    token_budget = min(1600, target_words * 8 + 500)
+    last_err: LLMError | None = None
+    for attempt in range(10):
+        attempt_prompt = prompt if attempt == 0 else f"{prompt}\nTalep: {uuid.uuid4().hex[:8]}"
+        try:
+            raw = chat(
+                attempt_prompt,
+                system=system,
+                api_key=api_key,
+                retries=0,
+                max_tokens=token_budget,
+                model="openai-fast",
+            )
+            return _normalize(_extract_json(raw))
+        except LLMError as exc:
+            last_err = exc
+            time.sleep(3 + attempt * 2)
+    raise last_err or LLMError("senaryo uretilemedi")
+
+
 def generate_script(
     topic: str,
     lang: str = "tr",
@@ -285,29 +323,43 @@ def generate_script(
         f"Dil: {lang_name} | Format: {aspect} | Sure: ~{duration} sn (~{target_words} kelime)\n"
         f"{style_line}\n"
         "Ilk 3 saniyede dikkat ceken hook ile basla. SADECE JSON dondur:\n"
-        '{"title":"...", "script":"paragraflari iki satir boslukla ayir", '
-        '"video_terms":["ingilizce stok goruntu kelimesi"], '
-        '"description":"...", "tags":["..."], "hashtags":["..."]}\n'
-        "video_terms 6-10 adet Ingilizce stok goruntu arama kelimesi olsun."
+        + _JSON_SCHEMA
     )
-    last_err: LLMError | None = None
-    # Yanit sinirinda kesilmesin: hedef kelimeye gore token butcesi ver.
-    # Not: model reasoning modunda calisir; butce reasoning + cevap toplamidir.
-    # Servis uygulanan ust sinir ~1600; ustu HTTP hatasi donduruyor.
-    token_budget = min(1600, target_words * 8 + 500)
-    for attempt in range(10):
-        attempt_prompt = prompt if attempt == 0 else f"{prompt}\nTalep: {uuid.uuid4().hex[:8]}"
-        try:
-            raw = chat(
-                attempt_prompt,
-                system=system,
-                api_key=api_key,
-                retries=0,
-                max_tokens=token_budget,
-                model="openai-fast",
-            )
-            return _normalize(_extract_json(raw))
-        except LLMError as exc:
-            last_err = exc
-            time.sleep(3 + attempt * 2)
-    raise last_err or LLMError("senaryo uretilemedi")
+    return _request_script(prompt, system, target_words, api_key)
+
+
+def clone_script(
+    source: dict[str, Any],
+    aspect: str = "9:16",
+    duration: int = 45,
+    lang: str = "tr",
+    api_key: str = "",
+) -> dict[str, Any]:
+    """Kaynak videonun YAPISINI ogrenip ayni yapiyla ozgun senaryo uretir.
+
+    Kaynak: {title, description, transcript, views}
+    Cikti: generate_script ile ayni JSON semasi.
+    """
+    title = str(source.get("title") or "").strip()
+    description = str(source.get("description") or "")[:1200]
+    transcript = str(source.get("transcript") or "")[:4000]
+    views = int(source.get("views") or 0)
+    lang_name = LANG_NAMES.get(lang, lang)
+    target_words = max(40, int(duration * 2.4))
+    system = (
+        "Profesyonel video senaristisin. Sadece gecerli JSON uydurursun, baska metin yazmazsin."
+    )
+    prompt = (
+        "Asagidaki basari videosunun YAPISINI analiz et (hook, akis, tempo, kapanis) ve "
+        "AYNI YAPIYI kullanarak YENI, OZGUN bir senaryo uret.\n"
+        "KURALLAR:\n"
+        "- Birebir kopya YASAK: en az %30 farkli aci, ornek ve cumle kur.\n"
+        "- Kaynak metinden sozdizimi veya tek cumle kopyalama.\n"
+        f"- Dil: {lang_name} | Format: {aspect} | Sure: ~{duration} sn (~{target_words} kelime)\n\n"
+        f"KAYNAK BASLIK: {title}\n"
+        f"KAYNAK IZLENME: {views}\n"
+        f"KAYNAK ACIKLAMA:\n{description or '(yok)'}\n\n"
+        f"KAYNAK TRANSCRIPT:\n{transcript or '(transcript yok - basliga ve aciklamaya gore yorum yap)'}\n\n"
+        "SADECE JSON dondur:\n" + _JSON_SCHEMA
+    )
+    return _request_script(prompt, system, target_words, api_key)

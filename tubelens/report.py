@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import REPORT_DIR, ensure_dirs
+from .shopping import action_recipe, channel_leak_summary, revenue_leak
 
 CSS = """
 :root{--bg:#0f1115;--card:#181b22;--line:#2a2f3a;--txt:#e6e8ee;--mut:#9aa3b2;
@@ -69,10 +70,12 @@ def build_report(data: dict[str, Any]) -> Path:
     summary:{...}, generated_at}"""
     ensure_dirs()
     s = data.get("summary", {})
+    leak = data.get("leak") or channel_leak_summary(data.get("videos", []))
     rows_video = []
     for a in data.get("videos", []):
         aff = len(a.get("affiliate_links", []))
         miss = a.get("misses", [])
+        vleak = revenue_leak({}, a)["leak"]
         rows_video.append(
             "<tr>"
             f'<td><a href="https://www.youtube.com/watch?v={_esc(a.get("video_id",""))}" target="_blank">'
@@ -80,6 +83,7 @@ def build_report(data: dict[str, Any]) -> Path:
             f'<span class="sub">{_esc(a.get("views",0))} izlenme</span></td>'
             f"<td>{_bar(a.get('opportunity_score',0))} "
             f"<b>{_esc(a.get('opportunity_score',0))}</b></td>"
+            f"<td><b style=\"color:var(--bad)\">${_esc(vleak)}</b></td>"
             f"<td>{aff}</td>"
             f"<td>{_badge('var','ok') if a.get('disclosures') else _badge('yok','bad') if aff else _badge('-','warn')}</td>"
             f"<td>{len(a.get('shopping_tags') or [])}</td>"
@@ -120,6 +124,30 @@ def build_report(data: dict[str, Any]) -> Path:
         for m in a.get("misses", []):
             opportunities.append(f'<li><b>{_esc(a.get("title","")[:50])}</b> — {_esc(m)}</li>')
 
+    recipe_blocks: list[str] = []
+    for a in data.get("videos", []):
+        recs = action_recipe({}, a)
+        if not recs:
+            continue
+        items = []
+        for r in recs:
+            copy_html = ""
+            if r.get("copy"):
+                copy_html = (
+                    '<pre class="mono" style="white-space:pre-wrap;background:#22262f;'
+                    f'padding:8px;border-radius:6px">{_esc(r["copy"])}</pre>'
+                )
+            items.append(f'<li><b>{_esc(r["title"])}</b> — {_esc(r["text"])}{copy_html}</li>')
+        recipe_blocks.append(
+            f'<div class="note"><b>{_esc(a.get("title","")[:60])}</b>'
+            f'<ul class="list">{"".join(items)}</ul></div>'
+        )
+    recipes_section = (
+        "".join(recipe_blocks)[:6000]
+        if recipe_blocks
+        else '<div class="sub">Bütün eksikler kapatılmış — reçete yok.</div>'
+    )
+
     generated = data.get("generated_at") or datetime.now().strftime("%Y-%m-%d %H:%M")
 
     html_doc = f"""<!DOCTYPE html>
@@ -134,6 +162,9 @@ Videolar: {_esc(s.get("videos",0))}</div>
 
 <h2>Özet</h2>
 <div class="cards">
+  <div class="card" style="border-color:var(--bad)"><div class="label">Tahmini Aylık Kaçak</div>
+    <div class="value" style="color:var(--bad)">${_esc(leak.get("total_leak",0))}</div>
+    <div class="hint">${_esc(leak.get("total_potential",0))} $ potansiyel · ${_esc(leak.get("videos_at_risk",0))} riskli video</div></div>
   <div class="card"><div class="label">Gelir Fırsat Skoru</div>
     <div class="value">{_esc(s.get("avg_score",0))}</div>
     <div class="hint">0-100 · affiliate + disclosure + shopping</div></div>
@@ -153,12 +184,17 @@ Videolar: {_esc(s.get("videos",0))}</div>
 gecelik düzeltme ile kapatılabilir; toplam etki aylık gelirde ölçülebilir artış sağlar.</div>
 <ul class="list">{''.join(opportunities[:25]) or '<li>Büyük açık bulunamadı.</li>'}</ul>
 
+<h2>Hazır Düzeltme Reçeteleri</h2>
+<div class="note">Aşağıdaki metinler doğrudan panoya kopyalanabilir. Her reçete bir eksiği
+kapatır; kapandıkça yukarıdaki $ kaçak azalır.</div>
+{recipes_section}
+
 <h2>Video Bazlı Affiliate / Shopping Analizi</h2>
 <table><thead><tr>
-<th>Video</th><th>Fırsat Skoru</th><th>Affiliate</th><th>Disclosure</th>
+<th>Video</th><th>Fırsat Skoru</th><th>$ Kaçak</th><th>Affiliate</th><th>Disclosure</th>
 <th>Shopping</th><th>Eksikler</th>
 </tr></thead><tbody>
-{''.join(rows_video) or '<tr><td colspan="6">Veri yok</td></tr>'}
+{''.join(rows_video) or '<tr><td colspan="7">Veri yok</td></tr>'}
 </tbody></table>
 
 <h2>AI Arama Görünürlüğü</h2>

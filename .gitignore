@@ -2,6 +2,7 @@
 /data/store.json
 /data/quota.json
 /data/video_config.json
+/data/clone_draft.json
 /reports/*.html
 /reports/*.tmp
 /videos/

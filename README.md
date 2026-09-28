@@ -47,7 +47,7 @@ Her video için:
 - Açıklama uzunluğu, spam sinyalleri, konuya uygun program önerileri
 
 Sonuçta **0-100 gelir fırsat skoru** ve "şu videoya şunu ekle" şeklinde öncelikli
-fırsat listesi üretilir.
+fırsat listesi üretilir. Yanında **$ kaçak tahmini** da var (aşağıda bkz. özellik 5).
 
 ### 3) TubeLens Video Kit — para basan video hattı
 
@@ -82,6 +82,40 @@ MoneyPrinterTurbo tarzı, **kendi kitimiz** olarak doğrudan CLI'ye gömülü ta
 > **Ücretsiz ve anahtarsız:** senaryo + TTS (edge/gtts) + altyazı + montaj + AI görsel
 > tamamen anahtarsız çalışır. Pexels/Pixabay anahtarları isteğe bağlı hız/kalite artışıdır;
 > OpenAI/ElevenLabs yalnızca daha iyi ses isteyenler içindir.
+
+### 4) Kazananı Klonla — Tarama → Üretim hattı (rakiplerde yok)
+
+Tarama tablosundaki her videonun yanındaki **`▶ Klonla`** butonu:
+
+1. Kaynak videonun **transkriptini** (kapalıysa başlık+açıklamayı) çeker,
+2. LLM ile videonun **yapısını** (hook, akış, tempo) analiz edip **aynı yapıda
+   özgün senaryo** üretir — birebir kopya prompt'ta yasaklanmıştır (%30 farklı açı),
+3. Senaryo `data/clone_draft.json`'a yazılır, panel Video formunu **otomatik doldurur**,
+4. `Video Üret`e bastığında senaryo **dosyadan okunur** (LLM tekrar çalışmaz).
+
+```bash
+# CLI karşılığı
+python -m tubelens clone "https://www.youtube.com/watch?v=VIDEO_ID"
+python -m tubelens video --script-file data/clone_draft.json
+```
+
+> "Rakibin en çok izlenen videosunu bul → 3 dakikada kendi versiyonunu üret" hattı.
+> Kota harcamaz (Pollinations anahtarsız); YouTube API anahtarı gerekmez.
+
+### 5) Gelir Kaçak $ Paneli — skor değil, para
+
+Skorlar ikna etmez; **para rakamı** eder. Tarama sonrası:
+
+- **"Tahmini aylık kaçak: $X"** kartı — izlenme × affiliate tıklama oranı × konu/komisyon endeksi;
+  affiliate/shopping/eksik açıklama payları ayrı ayrı $ olarak kırılır
+  (affiliate %60, shopping etiketi %25, kısa açıklama %10),
+- Tabloda video bazlı **$ Kaçak** sütunu,
+- Her videoda **`Düzelt ▾`** → eksik için hazır reçete: disclosure metni, program önerisi,
+  Studio etiketleme adımları, açıklama iskeleti — hepsi **`Panoya kopyala`** ile tek tık,
+- HTML raporda aynı kart + "Hazır Düzeltme Reçeteleri" bölümü.
+
+> Hesaplama deterministiktir, **kota harcamaz**. Endeksler `shopping.py`'de
+> (`_EARN_PER_CLICK`, `_AFFILIATE_CTR`) düzenlenebilir.
 
 ---
 
@@ -119,6 +153,10 @@ python -m tubelens scan "@mkbhd" --limit 5 --keywords "en iyi bütçe laptop 202
 # Kayıtlı veriden HTML rapor üret
 python -m tubelens report
 
+# KAZANANI KLONLA: rakip videonun yapısını özgün senaryoya çevir
+python -m tubelens clone "https://www.youtube.com/watch?v=VIDEO_ID"
+python -m tubelens video --script-file data/clone_draft.json   # senaryo dosyadan (LLM atlanır)
+
 # Yerel panel (tarayıcıda açılır) — 3 sekmeli: Tarama & Rapor | Video Üret | Durum & Lisans
 python -m tubelens panel
 
@@ -144,14 +182,18 @@ python -m tubelens video "konu" --pexels-key PTL_ANAHTAR --pixabay-key PBX_ANAHT
 
 - **CLI:** çıktı `reports/report_*.html` dosyasına yazılır.
 - **Panel:** `http://127.0.0.1:8787` — **3 sekme**: *Tarama & Rapor* (analiz tabloları),
-  *Video Üret* (kaynak/ses motoru seçimli üretim formu + oynatıcı), *Durum & Lisans*
-  (kota, lisans aktivasyon formu). Üretilen video panelde oynatılır ve
+  *Video Üret* (kaynak/ses motoru seçimli üretim formu + oynatıcı; **klon taslağı
+  geldiğinde form otomatik dolar**), *Durum & Lisans*
+  (kota, lisans aktivasyon formu). Tarama sekmesinde **`▶ Klonla`** butonu ve
+  **$ kaçak** sütunu + satır açılır **`Düzelt ▾`** reçeteleri (Panoya kopyala) vardır.
+  Üretilen video panelde oynatılır ve
   `/api/video/latest` adresinden indirilir (HTTP Range destekli, cache-bust'lu).
   Headless ortam için: `python -m tubelens panel --no-browser`.
 - **Panel video API'si:** `POST /api/video` gövdesi:
   `{topic, lang, duration, aspect, resolution, style, footage_dir, pexels_key, pixabay_key,
-  ai_visuals, tts_engine, voice, openai_key, elevenlabs_key, script_only}`;
+  ai_visuals, tts_engine, voice, openai_key, elevenlabs_key, script_only, script_file}`;
   ilerleme `/api/state` → `video` alanında, son üretim `/api/video/latest` + `/api/video/srt`;
+  klon: `POST /api/clone` `{url}` → `state.clone.draft`;
   lisans: `POST /api/activate` `{key}`. Üretim ≈1–3 dk sürer.
 - **Video Kit:** çıktı `videos/<zaman>-<slug>/` klasörüne yazılır; en son üretim
   `videos/` altında kalır, depoya girmez. `video --help` tüm seçenekleri listeler

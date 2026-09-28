@@ -105,6 +105,7 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
 <h2>Video Üret <span class="sub">senaryo → görüntü → ses → altyazı → MP4</span></h2>
 <p class="hint">Kaynak zinciri: lokal klasör → Pexels → Pixabay → <b>anahtarsız AI görsel + Ken Burns</b>
 (son adım hiç anahtar istemez). Ses: Edge TTS / gTTS anahtarsız; OpenAI / ElevenLabs API anahtarlı.</p>
+<div id="clonecard"></div>
 <form onsubmit="return startVideo()">
   <input id="vtopic" placeholder="Video konusu (örn. Sabah koşusunun 7 faydası)" required style="min-width:100%">
   <select id="vaspect"><option value="9:16" selected>9:16 dikey (Shorts/TikTok)</option>
@@ -157,6 +158,8 @@ let vtimer=null;
 let vticks=0;
 let vCache=0;
 let vKey='';
+let ctimer=null;
+let cloneApplied='';
 function switchTab(name){{
   document.querySelectorAll('.tab').forEach(function(b){{
     b.classList.toggle('on', b.dataset.tab===name);
@@ -180,6 +183,61 @@ async function startScan(){{
   timer=setInterval(poll,1200); poll();
   return false;
 }}
+async function cloneVideo(vid){{
+  const lg=document.getElementById('log');
+  lg.textContent='Klonlanıyor: '+vid+' (transkript + yapı analizi)…';
+  const r=await fetch('/api/clone',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{url:vid}})}});
+  const j=await r.json();
+  if(!j.ok){{lg.textContent='Hata: '+j.error;return;}}
+  switchTab('video'); poll();
+}}
+function renderClone(j){{
+  const c=j.clone||{{}};
+  const card=document.getElementById('clonecard');
+  if(!card) return;
+  if(c.busy){{
+    card.innerHTML='<div class="card" style="border-left:3px solid var(--acc)"><b>Klonlanıyor…</b> '+
+      '<span class="sub">'+((c.log||'').slice(-160))+'</span></div>';
+    return;
+  }}
+  const d=c.draft;
+  if(!d||!d.script||!d.script.script){{card.innerHTML=''; return;}}
+  if(cloneApplied!==d.created_at){{
+    cloneApplied=d.created_at;
+    document.getElementById('vtopic').value=d.script.title||'';
+    const asp=document.getElementById('vaspect'); asp.value=d.aspect||'9:16';
+    const dur=document.getElementById('vduration');
+    const dv=String(d.duration||45);
+    if(!Array.from(dur.options).some(o=>o.value===dv)){{
+      const opt=document.createElement('option'); opt.value=dv; dur.add(opt);
+    }}
+    dur.value=dv;
+    document.getElementById('vstyle').value='';
+    document.getElementById('vscript').checked=false;
+  }}
+  const words=(d.script.script||'').split(/\\s+/).length;
+  card.innerHTML='<div class="card" style="border-left:3px solid var(--ok);margin-bottom:12px">'+
+    '<div class="label">Klon taslağı hazır — özgün açıyla</div>'+
+    '<div style="margin-top:6px"><b>'+(d.script.title||'—')+'</b> <span class="sub">'+words+' kelime · '+
+    (d.duration||45)+' sn · '+(d.aspect||'9:16')+'</span></div>'+
+    '<div class="sub">Kaynak: '+((d.source&&d.source.title||'').slice(0,70))+' · '+
+    ((d.source&&d.source.views)||0)+' izlenme</div>'+
+    '<div class="sub">Form dolduruldu. <b>Video Üret</b>e bas — senaryo dosyadan okunur, LLM tekrar çalışmaz.</div>'+
+    '</div>';
+}}
+async function copyText(id){{
+  const el=document.getElementById(id);
+  if(!el) return;
+  try{{ await navigator.clipboard.writeText(el.value); }}catch(e){{ el.select(); document.execCommand('copy'); }}
+  const btn=document.getElementById('btn-'+id);
+  if(btn){{ const t=btn.textContent; btn.textContent='Kopyalandı ✓'; setTimeout(function(){{btn.textContent=t;}},1400); }}
+}}
+function toggleRecipe(i){{
+  const row=document.getElementById('rec'+i);
+  if(!row) return;
+  row.style.display=(row.style.display==='none')?'':'none';
+}}
 async function startVideo(){{
   const topic=document.getElementById('vtopic').value.trim();
   if(!topic) return false;
@@ -197,7 +255,8 @@ async function startVideo(){{
     voice:document.getElementById('vvoice').value.trim(),
     openai_key:document.getElementById('vopenai').value.trim(),
     elevenlabs_key:document.getElementById('veleven').value.trim(),
-    script_only:document.getElementById('vscript').checked}};
+    script_only:document.getElementById('vscript').checked,
+    script_file:cloneApplied?'clone_draft.json':''}};
   document.getElementById('vlog').textContent='Video üretimi başlatıldı…';
   document.getElementById('vresult').innerHTML='';
   const r=await fetch('/api/video',{{method:'POST',headers:{{'Content-Type':'application/json'}},
@@ -270,19 +329,40 @@ function render(j){{
      <div class="card"><div class="label">Video üretimi</div><div class="value" style="font-size:18px">${{j.video&&j.video.busy?'çalışıyor':(j.video&&j.video.result&&j.video.result.ok?'son üretim hazır':'bekliyor')}}</div></div>
      <div class="card"><div class="label">Panel</div><div class="value" style="font-size:18px">127.0.0.1:8787</div></div>`;
   }}
+  const lk=j.leak||{{}};
   document.getElementById('cards').innerHTML=`
+   <div class="card" style="border-color:var(--bad)"><div class="label">Tahmini Aylık Kaçak</div>
+    <div class="value" style="color:var(--bad)">${{lk.total_leak?('$'+lk.total_leak):'$0'}}</div>
+    <div class="hint">${{lk.total_potential?('$'+lk.total_potential+' potansiyel · ':'')}}${{lk.videos_at_risk||0}} riskli video</div></div>
    <div class="card"><div class="label">Fırsat Skoru</div><div class="value">${{s.avg_score??0}}</div></div>
    <div class="card"><div class="label">Video</div><div class="value">${{s.videos??0}}</div></div>
    <div class="card"><div class="label">Affiliate Link</div><div class="value">${{s.total_affiliate_links??0}}</div></div>
    <div class="card"><div class="label">Linki Olmayan</div><div class="value">${{s.videos_without_links??0}}</div></div>`;
   if(j.videos && j.videos.length){{
-    document.getElementById('videos').innerHTML=`<table><tr><th>Video</th><th>Skor</th><th>Affil.</th>
-     <th>Disclosure</th><th>Shopping</th></tr>`+
-     j.videos.map(v=>`<tr><td><a href="https://www.youtube.com/watch?v=${{v.video_id}}" target="_blank">${{(v.title||'').slice(0,60)}}</a>
-       <div class="sub">${{v.views||0}} izlenme</div></td>
-      <td>${{bar(v.opportunity_score)}}</td><td>${{(v.affili||[]).length}}</td>
-      <td>${{v.disc?'<span class="badge ok">var</span>':(v.affili&&v.affili.length?'<span class="badge bad">yok</span>':'<span class="badge warn">-</span>')}}</td>
-      <td>${{v.shop||0}}</td></tr>`).join('')+`</table>`;
+    document.getElementById('videos').innerHTML=`<table><tr><th>Video</th><th>Skor</th><th>$ Kaçak</th><th>Affil.</th>
+     <th>Disclosure</th><th>Shopping</th><th></th></tr>`+
+     j.videos.map((v,i)=>{{
+       const rec=v.recipes||[];
+       let recRow='';
+       if(rec.length){{
+         recRow='<tr id="rec'+i+'" style="display:none"><td colspan="7"><div style="padding:6px 0">'+
+           rec.map(r=>'<div style="margin:8px 0;padding:10px;background:#1e222b;border-radius:8px">'+
+             '<b>'+r.title+'</b><div class="sub" style="white-space:pre-line;margin-top:4px">'+r.text+'</div>'+
+             (r.copy?'<div style="margin-top:8px"><textarea readonly id="copy'+i+'-'+r.id+'" style="width:100%;height:64px;font-size:12px;background:#14161c;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px">'+r.copy+'</textarea>'+
+               '<button id="btn-copy'+i+'-'+r.id+'" onclick="copyText(\'copy'+i+'-'+r.id+'\')" style="margin-top:6px">Panoya kopyala</button></div>':'')+
+           '</div>').join('')+'</div></td></tr>';
+       }}
+       const leak=v.leak>0?'<b style="color:var(--bad)">$'+v.leak+'</b>':'<span class="sub">$0</span>';
+       return '<tr><td><a href="https://www.youtube.com/watch?v='+v.video_id+'" target="_blank">'+(v.title||'').slice(0,60)+'</a>'+
+         '<div class="sub">'+(v.views||0)+' izlenme '+
+         '<button onclick="cloneVideo(\''+v.video_id+'\')" title="Bu videonun yapısını klonla → özgün senaryo" style="margin-left:8px">▶ Klonla</button></div></td>'+
+         '<td>'+bar(v.opportunity_score)+'</td>'+
+         '<td>'+leak+'</td>'+
+         '<td>'+(v.affili||[]).length+'</td>'+
+         '<td>'+(v.disc?'<span class="badge ok">var</span>':(v.affili&&v.affili.length?'<span class="badge bad">yok</span>':'<span class="badge warn">-</span>'))+'</td>'+
+         '<td>'+(v.shop||0)+'</td>'+
+         '<td>'+(rec.length?'<button onclick="toggleRecipe('+i+')">Düzelt ▾</button>':'')+'</td></tr>'+recRow;
+     }}).join('')+`</table>`;
   }}
   if(j.ai && j.ai.length){{
     document.getElementById('ai').innerHTML=`<table><tr><th>Sorgu</th><th>Google</th><th>YouTube</th>
@@ -296,6 +376,10 @@ function render(j){{
   const al=document.getElementById('alog');
   if(al && j.activate_log) al.textContent=j.activate_log;
   renderVideo(j);
+  renderClone(j);
+  if(j.clone && !j.clone.busy && j.clone.draft && ctimer){{
+    clearInterval(ctimer); ctimer=null;
+  }}
   if(j.video&&j.video.result&&!j.video.busy&&vtimer){{
     clearInterval(vtimer); vtimer=null;
   }}
@@ -326,6 +410,9 @@ class _State:
         self.video_log = "Video üretimi bekleniyor…"
         self.video_result: dict | None = None
         self.activate_log = "Aktivasyon bekleniyor…"
+        self.clone_busy = False
+        self.clone_log = "Klon bekleniyor…"
+        self.clone_draft: dict | None = None
 
 
 STATE = _State()
@@ -341,6 +428,8 @@ def _video_row(record: dict) -> dict:
         "affili": a.get("affiliate_links", []),
         "disc": bool(a.get("disclosures")),
         "shop": len(a.get("shopping_tags") or []),
+        "leak": shopping.revenue_leak(record, a)["leak"],
+        "recipes": shopping.action_recipe(record, a),
     }
 
 
@@ -357,9 +446,15 @@ def _state_payload() -> dict:
         "videos": STATE.last_analyses or videos,
         "ai": STATE.last_ai or ai,
         "summary": shopping.channel_summary(analyses),
+        "leak": shopping.channel_leak_summary(analyses),
         "quota": quota.summary_line(),
         "licensed": quota.is_licensed(),
         "activate_log": STATE.activate_log,
+        "clone": {
+            "busy": STATE.clone_busy,
+            "log": STATE.clone_log,
+            "draft": STATE.clone_draft,
+        },
         "video": {
             "busy": STATE.video_busy,
             "log": STATE.video_log,
@@ -393,6 +488,41 @@ def _run_scan(target: str, keywords: str, limit: int) -> None:
         STATE.busy = False
         STATE.last_analyses = []
         STATE.last_ai = []
+
+
+def _run_clone(url: str) -> None:
+    import subprocess
+    import sys
+
+    from .config import DATA_DIR, ROOT
+
+    STATE.clone_busy = True
+    STATE.clone_log = f"Klonlanıyor: {url}"
+    cmd = [sys.executable, "-m", "tubelens", "clone", url]
+    try:
+        proc = subprocess.run(
+            cmd, cwd=str(ROOT), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=420,
+        )
+        out = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        STATE.clone_log = out[-1500:] or ("Klon tamamlandı." if proc.returncode == 0 else "Klon başarısız")
+        if proc.returncode == 0:
+            draft_path = DATA_DIR / "clone_draft.json"
+            try:
+                STATE.clone_draft = json.loads(draft_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                STATE.clone_draft = None
+                STATE.clone_log = "Klon çıktı üretildi ama draft okunamadı."
+        else:
+            STATE.clone_draft = None
+    except subprocess.TimeoutExpired:
+        STATE.clone_draft = None
+        STATE.clone_log = "Klon zaman aşımı (7 dk)"
+    except Exception as exc:  # noqa: BLE001
+        STATE.clone_draft = None
+        STATE.clone_log = f"Klon hatası: {exc}"
+    finally:
+        STATE.clone_busy = False
 
 
 def _run_activate(key: str) -> None:
@@ -435,7 +565,24 @@ def _run_video(params: dict) -> None:
     STATE.video_result = None
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = VIDEO_DIR / f"panel-{stamp}"
-    cmd = [sys.executable, "-m", "tubelens", "video", str(params.get("topic", "")), "--out", str(out_dir)]
+    if str(params.get("script_file") or "") == "clone_draft.json":
+        from .config import DATA_DIR
+
+        draft_path = DATA_DIR / "clone_draft.json"
+        cmd = [
+            sys.executable, "-m", "tubelens", "video",
+            "--script-file", str(draft_path), "--out", str(out_dir),
+        ]
+        if draft_path.exists():
+            try:
+                draft = json.loads(draft_path.read_text(encoding="utf-8"))
+                params = {**params, "topic": str((draft.get("script") or {}).get("title") or "klon")}
+                params.setdefault("aspect", draft.get("aspect") or "")
+                params.setdefault("duration", draft.get("duration") or 0)
+            except (json.JSONDecodeError, OSError):
+                pass
+    else:
+        cmd = [sys.executable, "-m", "tubelens", "video", str(params.get("topic", "")), "--out", str(out_dir)]
     opt_map = {
         "lang": "--lang",
         "aspect": "--aspect",
@@ -575,7 +722,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path not in ("/api/scan", "/api/video", "/api/activate"):
+        if parsed.path not in ("/api/scan", "/api/video", "/api/activate", "/api/clone"):
             self._send(b"404", code=404)
             return
         length = int(self.headers.get("Content-Length", 0) or 0)
@@ -584,6 +731,19 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             payload = {}
+
+        if parsed.path == "/api/clone":
+            url = str(payload.get("url", "")).strip()
+            if not url:
+                self._send(json.dumps({"ok": False, "error": "video URL gerekli"}).encode(), "application/json")
+                return
+            if STATE.clone_busy:
+                self._send(json.dumps({"ok": False, "error": "Klon zaten çalışıyor"}).encode(), "application/json")
+                return
+            thread = threading.Thread(target=_run_clone, args=(url,), daemon=True)
+            thread.start()
+            self._send(json.dumps({"ok": True}).encode(), "application/json")
+            return
 
         if parsed.path == "/api/activate":
             key = str(payload.get("key", "")).strip()
