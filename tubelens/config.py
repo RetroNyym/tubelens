@@ -1,11 +1,14 @@
 """Yollar, basliklar ve sabitler."""
 
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 REPORT_DIR = ROOT / "reports"
+VIDEO_DIR = ROOT / "videos"
 STORE_PATH = DATA_DIR / "store.json"
+VIDEO_CONFIG_PATH = DATA_DIR / "video_config.json"
 CATALOG_PATH = Path(__file__).resolve().parent / "data" / "product_catalog.json"
 
 USER_AGENT = (
@@ -28,3 +31,22 @@ POLITE_DELAY = 0.8  # istekler arasi bekleme (saniye)
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def load_video_config() -> dict:
+    if VIDEO_CONFIG_PATH.exists():
+        try:
+            data = json.loads(VIDEO_CONFIG_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def save_video_config(cfg: dict) -> None:
+    ensure_dirs()
+    VIDEO_CONFIG_PATH.write_text(
+        json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+    )

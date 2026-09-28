@@ -44,6 +44,23 @@ Her video için:
 Sonuçta **0-100 gelir fırsat skoru** ve "şu videoya şunu ekle" şeklinde öncelikli
 fırsat listesi üretilir.
 
+### 3) TubeLens Video Kit — para basan video hattı
+
+MoneyPrinterTurbo tarzı, **kendi kitimiz** olarak doğrudan CLI'ye gömülü tam video
+üretim hattı. Tek komutla konudan bitmiş MP4'e:
+
+- **Senaryo** → anahtarsız Pollinations LLM (hook, anlatım, SEO başlık/açıklama/etiket + İngilizce stok görüntü kelimeleri)
+- **Görüntü** → Pexels (ücretsiz anahtar) veya `--footage-dir` ile kendi videolarınız
+- **Seslendirme** → Edge TTS (**anahtarsız**, 100+ ses, TR/EN/DE/FR/ES/AR/RU)
+- **Altyazı** → kelime bazlı zamanlamadan SRT + videoya yakma (libass)
+- **Montaj** → FFmpeg: hedef çözünürlüğe indirme (cover-crop), klip birleştirme, ses kalibrasyonu, opsiyonel arka plan müziği, `+faststart`
+
+Çıktı klasöründe: `video.mp4`, `script.json` / `script.txt`, `audio.mp3`,
+`subtitles.srt` ve YouTube'a yükleme için hazır `meta.json` (başlık/açıklama/etiketler).
+
+> **Ücretsiz ve anahtarsız:** senaryo + TTS + altyazı + montaj tamamen anahtarsız çalışır.
+> Tek isteğe bağlı anahtar, stok görüntüler için ücretsiz Pexels API'sidir.
+
 ---
 
 ## Kurulum
@@ -57,6 +74,7 @@ pip install -r requirements.txt
 ```
 
 Gereksinim: **Python 3.11+**, internet erişimi. YouTube Data API anahtarı **gerekmez**.
+Video kiti için de anahtar gerekmez (ffmpeg `imageio-ffmpeg` ile otomatik gelir).
 
 ---
 
@@ -77,12 +95,29 @@ python -m tubelens report
 
 # Yerel panel (tarayıcıda açılır)
 python -m tubelens panel
+
+# Video Kit: konudan bitmiş videoya (senaryo + görüntü + ses + altyazı)
+python -m tubelens video "Sabah koşusunun 7 faydası"
+
+# Sadece senaryo üret (YouTube başlık/açıklama/etiketler dahil)
+python -m tubelens video "Yapay zeka nedir" --script-only
+
+# Kendi görüntülerinle + arka plan müziğiyle, yatay 720p
+python -m tubelens video "Kahve demleme sırları" --aspect 16:9 --resolution 720 \
+  --footage-dir "C:\footage" --bgm music.mp3
+
+# Pexels anahtarını bir kez kaydet (ücretsiz: https://www.pexels.com/api/)
+python -m tubelens video "konu" --pexels-key PTL_ANAHTAR
 ```
 
 - **CLI:** çıktı `reports/report_*.html` dosyasına yazılır.
 - **Panel:** `http://127.0.0.1:8787` — formdan tarama başlatır, sonuçları tablo
   olarak gösterir, son HTML raporu `/report` adresinde açılır.
   Headless ortam için: `python -m tubelens panel --no-browser`.
+- **Video Kit:** çıktı `videos/<zaman>-<slug>/` klasörüne yazılır; en son üretim
+  `videos/` altında kalır, depoya girmez. `video --help` tüm seçenekleri listeler
+  (`--lang`, `--duration`, `--aspect 9:16|16:9|1:1`, `--voice`, `--clips`,
+  `--no-subs`, `--bgm-volume`, `--out` …).
 
 ---
 
@@ -94,6 +129,7 @@ python -m tubelens panel
 | Affiliate & shopping analizi | ✅ sınırsız | ✅ sınırsız |
 | AI görünürlük sorgusu | **5 sorgu** | sınırsız |
 | Rapor + panel | ✅ | ✅ |
+| Video üretim kiti (senaryo + MP4) | ✅ sınırsız | ✅ sınırsız |
 
 - **1 sorgu = 1 anahtar kelime.** `--keywords a,b,c` 3 sorgu harcar.
   Kaç video taradığınız hak yakmaz.
@@ -162,10 +198,15 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 | `license.py` | LemonSqueezy License API: activate / validate / deactivate, 7 gün yenileme, 30 gün tolerans |
 | `report.py` | Tek dosya HTML rapor (`reports/latest.html`) |
 | `panel.py` | Standart kütüphane HTTP paneli (harici framework yok) |
-| `cli.py` | `scan` / `report` / `panel` / `status` / `activate` / `deactivate` / `keygen` |
+| `cli.py` | `scan` / `report` / `panel` / `video` / `status` / `activate` / `deactivate` / `keygen` |
 | `storage.py` | `data/store.json` kayıt deposu (tarama geçmişi) |
+| `llm.py` | Anahtarsız Pollinations LLM istemcisi + MPT tarzı senaryo üretici (JSON şema, cache-kırma retry) |
+| `footage.py` | Görüntü kaynağı: Pexels arama/indirme veya lokal klasör |
+| `voice.py` | Edge TTS seslendirme + kelime bazlı zamanlamalar |
+| `assemble.py` | FFmpeg montaj: scale/crop, concat, tpad, SRT yakma, ses mix |
 
 İstekler kibar gecikmeli (`POLITE_DELAY = 0.8s`), tek bir User-Agent ile atılır.
+Video kiti ağ istekleri: Pollinations (senaryo), Pexels (görüntü), Microsoft Edge TTS (ses).
 
 ---
 
@@ -183,11 +224,13 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 ## Yol haritası
 
 - [x] Ödeme entegrasyonu: LemonSqueezy License API ile uzaktan lisans doğrulama
+- [x] Video üretim kiti: MoneyPrinterTurbo tarzı anahtarsız senaryo → MP4 hattı
 - [ ] Webhook → GitHub Action ile satış kaydı (opsiyonel)
 - [ ] Zaman serisi: skor takibi (`runs` geçmişinden trend grafiği)
 - [ ] Rakip AI görünürlüğü karşılaştırma (aynı sorguda kim önde?)
 - [ ] Toplu CSV dışa/içe aktarma ve planlı tarama (`cron`)
 - [ ] Kanal bazlı affiliate boşluk raporu (hangi videoda hangi program eksik)
+- [ ] Video kiti: Pixabay/Coverr kaynakları, panel üzerinden video üretimi
 
 ---
 

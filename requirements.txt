@@ -1,2 +1,4 @@
 requests>=2.31
 beautifulsoup4>=4.12
+edge-tts>=7.2
+imageio-ffmpeg>=0.6

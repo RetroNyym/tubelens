@@ -8,15 +8,20 @@ Komutlar:
   python -m tubelens activate <ANAHTAR> pro lisansını açar (LemonSqueezy veya yerel)
   python -m tubelens deactivate        lisansı bu bilgisayardan kaldırır
   python -m tubelens keygen [--days N] satıcı için lisans anahtarı üretir
+  python -m tubelens video <KONU>      MPT tarzı tam video üretimi (senaryo+görüntü+ses+altyazı)
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
+import unicodedata
 from datetime import datetime, timezone
+from pathlib import Path
 
-from . import quota, shopping, storage
+from . import config, quota, shopping, storage
 from .config import ensure_dirs
 from .license import LicenseError
 from .search import run_checks
@@ -241,6 +246,143 @@ def cmd_keygen(args: argparse.Namespace) -> int:
     return 0
 
 
+def _slugify(text: str, max_len: int = 40) -> str:
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug[:max_len].rstrip("-") or "video"
+
+
+def cmd_video(args: argparse.Namespace) -> int:
+    """MoneyPrinterTurbo tarzi tam video uretim hatti (kit icinde, anahtarsiz)."""
+    ensure_dirs()
+    from . import assemble, footage, llm, voice
+
+    vconf = config.load_video_config()
+    if args.pexels_key:
+        vconf["pexels_api_key"] = args.pexels_key.strip()
+        config.save_video_config(vconf)
+        print("[i] Pexels anahtari kaydedildi (data/video_config.json)")
+    pexels_key = (args.pexels_key or vconf.get("pexels_api_key") or "").strip()
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = (
+        Path(args.out)
+        if args.out
+        else config.VIDEO_DIR / f"{stamp}-{_slugify(args.topic)}"
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[1/5] Senaryo uretiliyor (Pollinations - anahtarsiz): {args.topic}")
+    try:
+        script = llm.generate_script(
+            args.topic,
+            lang=args.lang,
+            duration=args.duration,
+            aspect=args.aspect,
+            style=args.style,
+            api_key=str(vconf.get("pollinations_api_key") or ""),
+        )
+    except llm.LLMError as exc:
+        print(f"  HATA: {exc}", file=sys.stderr)
+        return 2
+    (out_dir / "script.json").write_text(
+        json.dumps(script, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (out_dir / "script.txt").write_text(script["script"], encoding="utf-8")
+    print(f"      Baslik: {script['title']}")
+
+    if args.script_only:
+        print(f"Senaryo hazir: {out_dir}")
+        return 0
+
+    clip_count = args.clips or max(4, min(10, round(args.duration / 4)))
+    print(f"[2/5] Goruntuler hazirlaniyor ({clip_count} klip)")
+    try:
+        clips = footage.gather(
+            script["video_terms"],
+            pexels_key=pexels_key,
+            footage_dir=args.footage_dir,
+            dest_dir=out_dir / "assets",
+            count=clip_count,
+            aspect=args.aspect,
+        )
+    except footage.FootageError as exc:
+        print(f"  HATA: {exc}", file=sys.stderr)
+        return 3
+    print(f"      {len(clips)} klip hazir")
+
+    voice_name = args.voice or voice.default_voice(args.lang)
+    audio_path = out_dir / "audio.mp3"
+    print(f"[3/5] Seslendirme (Edge TTS - anahtarsiz): {voice_name}")
+    try:
+        words = voice.synthesize(script["script"], audio_path, voice_name)
+    except voice.VoiceError as exc:
+        print(f"  HATA: {exc}", file=sys.stderr)
+        return 4
+
+    print("[4/5] Altyazi zamanlamasi")
+    srt_text = ""
+    if args.no_subs:
+        print("      atlandi (--no-subs)")
+    elif not words:
+        print("      uyari: kelime zamanlamasi yok, altyazi atlandi")
+    else:
+        srt_text = assemble.words_to_srt(words)
+        print(f"      {srt_text.count('-->')} altyazi parcasi")
+
+    print(f"[5/5] Montaj (ffmpeg {args.aspect} @{args.resolution}p)")
+    final_path = out_dir / "video.mp4"
+    work_dir = out_dir / "work"
+    try:
+        _, duration = assemble.render(
+            clips,
+            audio_path,
+            final_path,
+            aspect=args.aspect,
+            resolution=args.resolution,
+            srt_text=srt_text,
+            bgm=Path(args.bgm) if args.bgm else None,
+            bgm_volume=args.bgm_volume,
+            work_dir=work_dir,
+        )
+    except assemble.AssemblyError as exc:
+        print(f"  HATA: {exc}", file=sys.stderr)
+        print(f"      Ara dosyalar silinmedi: {work_dir}", file=sys.stderr)
+        return 5
+
+    meta = {
+        "topic": args.topic,
+        "title": script["title"],
+        "description": script["description"],
+        "tags": script["tags"],
+        "hashtags": script["hashtags"],
+        "video_terms": script["video_terms"],
+        "aspect": args.aspect,
+        "resolution": args.resolution,
+        "voice": voice_name,
+        "duration_sec": round(duration, 2),
+        "clips": [c.name for c in clips],
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+    }
+    (out_dir / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    import shutil
+
+    shutil.rmtree(work_dir, ignore_errors=True)
+
+    print()
+    print("=" * 60)
+    print(f"Video : {final_path}")
+    print(f"Sures : {duration:.1f} sn | Format: {args.aspect} @{args.resolution}p | Ses: {voice_name}")
+    print(f"Baslik: {script['title']}")
+    print(f"Meta  : {out_dir / 'meta.json'} (YouTube baslik/aciklama/etiketler)")
+    if not args.no_subs:
+        print(f"Altyazi: {out_dir / 'subtitles.srt'}")
+    print("=" * 60)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     # Windows konsolu (cp1254/TR) UTF-8 karakterleri basamayabiliyor
     for stream in (sys.stdout, sys.stderr):
@@ -281,6 +423,33 @@ def main(argv: list[str] | None = None) -> int:
     p_key = sub.add_parser("keygen", help="satıcı: lisans anahtarı üret")
     p_key.add_argument("--days", type=int, default=0, help="geçerlilik gün (0 = sınırsız)")
     p_key.set_defaults(func=cmd_keygen)
+
+    p_video = sub.add_parser(
+        "video",
+        help="MPT tarzı tam video üret (senaryo + görüntü + ses + altyazı)",
+    )
+    p_video.add_argument("topic", help="video konusu / başlık fikri")
+    p_video.add_argument("--lang", default="tr", help="senaryo dili (varsayılan tr)")
+    p_video.add_argument(
+        "--duration", type=int, default=45, help="hedef seslendirme süresi (sn)"
+    )
+    p_video.add_argument(
+        "--aspect", choices=["9:16", "16:9", "1:1"], default="9:16", help="video formatı"
+    )
+    p_video.add_argument(
+        "--resolution", type=int, choices=[720, 1080], default=1080, help="çözünürlük"
+    )
+    p_video.add_argument("--voice", help="Edge TTS sesi (örn. tr-TR-EmelNeural)")
+    p_video.add_argument("--style", help="ton/istil (örn. belgesel, hızlı, eğlenceli)")
+    p_video.add_argument("--clips", type=int, default=0, help="görüntü klip sayısı (0 = oto)")
+    p_video.add_argument("--footage-dir", help="kendi görüntülerinizin klasörü")
+    p_video.add_argument("--pexels-key", help="Pexels API anahtarı (ücretsiz, kaydedilir)")
+    p_video.add_argument("--bgm", help="arka plan müziği dosyası")
+    p_video.add_argument("--bgm-volume", type=float, default=0.12, help="müzik sesi (0-1)")
+    p_video.add_argument("--no-subs", action="store_true", help="altyazı üretme")
+    p_video.add_argument("--script-only", action="store_true", help="sadece senaryo üret")
+    p_video.add_argument("--out", help="çıktı klasörü (varsayılan videos/<zaman>-<slug>)")
+    p_video.set_defaults(func=cmd_video)
 
     args = parser.parse_args(argv)
     return args.func(args)

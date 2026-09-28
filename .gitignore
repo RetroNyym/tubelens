@@ -1,8 +1,10 @@
 # Çıktı / çalışma zamanı verileri (depoya girmez)
 /data/store.json
 /data/quota.json
+/data/video_config.json
 /reports/*.html
 /reports/*.tmp
+/videos/
 
 # Python
 __pycache__/
