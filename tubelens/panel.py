@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from . import quota, shopping, storage
+from . import brand, quota, shopping, storage
 from .config import REPORT_DIR, ensure_dirs
 
 CSS = """
@@ -63,12 +63,20 @@ border-bottom:none;border-radius:10px 10px 0 0;cursor:pointer;font-weight:600;fo
 .tabpanel{display:none;padding-top:6px}
 .tabpanel.on{display:block}
 .hint{font-size:13px;color:var(--mut);margin:6px 0 0}
+.brand{width:30px;height:30px;vertical-align:-7px;margin-right:10px;flex:none}
+body::after{content:"";position:fixed;right:-40px;bottom:-40px;width:560px;height:560px;
+background:url("LOGO_URI") no-repeat center/contain;opacity:.045;pointer-events:none;z-index:0}
+.wrap,header{position:relative;z-index:1}
+footer{border-top:1px solid var(--line);margin-top:40px;padding:16px 24px;text-align:center;
+color:var(--mut);font-size:13px;position:relative;z-index:1}
+footer b{color:var(--txt)}
 """
 
 PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TubeLens Panel</title><style>{CSS}</style></head><body>
-<header><h1>TubeLens — AI Görünürlük + Affiliate + Video Üretim Paneli</h1>
+<title>TubeLens Panel</title><link rel="icon" href="{brand.FAVICON}">
+<style>{CSS.replace("LOGO_URI", brand.FAVICON)}</style></head><body>
+<header><h1>{brand.SVG.replace('<svg ', '<svg class="brand" ')}TubeLens — AI Görünürlük + Affiliate + Video Üretim Paneli</h1>
 <span class="sub"><span id="kota" class="badge acc" style="margin-right:12px">kota: …</span><a href="/report" target="_blank">Son HTML rapor</a></span></header>
 <div class="wrap">
 
@@ -131,6 +139,8 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
   <input id="veleven" placeholder="ElevenLabs API anahtarı (ops., kaydedilir)">
   <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:170px">
     <input type="checkbox" id="vscript"> Sadece senaryo</label>
+  <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:230px">
+    <input type="checkbox" id="vlogo" checked> Videoya TubeLens filigranı + imza</label>
   <button type="submit">Video Üret</button>
 </form>
 <div class="log" id="vlog">Video üretimi bekleniyor…</div>
@@ -256,6 +266,7 @@ async function startVideo(){{
     openai_key:document.getElementById('vopenai').value.trim(),
     elevenlabs_key:document.getElementById('veleven').value.trim(),
     script_only:document.getElementById('vscript').checked,
+    logo:document.getElementById('vlogo').checked,
     script_file:cloneApplied?'clone_draft.json':''}};
   document.getElementById('vlog').textContent='Video üretimi başlatıldı…';
   document.getElementById('vresult').innerHTML='';
@@ -396,7 +407,9 @@ function render(j){{
   if(h==='video'||h==='status'||h==='scan') switchTab(h);
   poll(); setInterval(poll,4000);
 }})();
-</script></body></html>"""
+</script>
+<footer><b>{brand.SVG.replace('<svg ', '<svg style="width:16px;height:16px;vertical-align:-3px;margin-right:6px" ')}TubeLens</b> · RetroNyym — analiz · affiliate denetçisi · ücretsiz video üretim kiti</footer>
+</body></html>"""
 
 
 class _State:
@@ -607,6 +620,8 @@ def _run_video(params: dict) -> None:
         cmd += ["--script-only"]
     if not params.get("ai_visuals", True):
         cmd += ["--no-ai-visuals"]
+    if params.get("logo") is False:
+        cmd += ["--no-logo"]
     engine = str(params.get("tts_engine") or "edge")
     STATE.video_log = f"Video üretimi başladı: {params.get('topic', '')} (motor={engine})"
     try:

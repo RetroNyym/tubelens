@@ -79,6 +79,10 @@ MoneyPrinterTurbo tarzı, **kendi kitimiz** olarak doğrudan CLI'ye gömülü ta
 Çıktı klasöründe: `video.mp4`, `script.json` / `script.txt`, `audio.mp3`,
 `subtitles.srt` ve YouTube'a yükleme için hazır `meta.json` (başlık/açıklama/etiketler).
 
+> **Marka imzası:** her video sağ üst köşede yarı saydam **TubeLens filigranı** taşır
+> ve `meta.json` açıklamasının sonuna "— TubeLens ile üretildi" satırı eklenir
+> (`--no-logo` ile kapatılır; panelde Video Üret sekmesindeki onay kutusu).
+
 > **Ücretsiz ve anahtarsız:** senaryo + TTS (edge/gtts) + altyazı + montaj + AI görsel
 > tamamen anahtarsız çalışır. Pexels/Pixabay anahtarları isteğe bağlı hız/kalite artışıdır;
 > OpenAI/ElevenLabs yalnızca daha iyi ses isteyenler içindir.

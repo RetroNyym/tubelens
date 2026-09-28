@@ -2,5 +2,6 @@ requests>=2.31
 beautifulsoup4>=4.12
 edge-tts>=7.2
 imageio-ffmpeg>=0.6
+Pillow>=10
 gTTS>=2.5
 mutagen>=1.47

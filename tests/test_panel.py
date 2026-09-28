@@ -70,6 +70,17 @@ def test_index_has_usp_buttons(server):
     assert "Panoya kopyala" in text  # aksiyon recetesi
 
 
+def test_index_has_branding(server):
+    status, body, _ = _get(f"{server}/")
+    text = body.decode("utf-8")
+    assert status == 200
+    assert 'rel="icon"' in text  # favicon
+    assert 'class="brand"' in text  # header logosu
+    assert "<footer>" in text  # imza footer'i
+    assert "vlogo" in text  # filigran checkbox
+    assert "body::after" in text  # arka plan watermark
+
+
 def test_clone_requires_url(server):
     body = _post(f"{server}/api/clone", {})
     assert body["ok"] is False

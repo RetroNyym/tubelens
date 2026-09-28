@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from . import brand
 from .config import REPORT_DIR, ensure_dirs
 from .shopping import action_recipe, channel_leak_summary, revenue_leak
 
@@ -16,9 +17,12 @@ CSS = """
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--txt);
 font:15px/1.6 "Segoe UI",Roboto,system-ui,sans-serif}
-.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+body::after{content:"";position:fixed;right:-40px;bottom:-40px;width:560px;height:560px;
+background:url("LOGO_URI") no-repeat center/contain;opacity:.045;pointer-events:none;z-index:0}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px;position:relative;z-index:1}
 h1{font-size:26px;margin:0 0 6px} h2{font-size:19px;margin:34px 0 12px;
 border-bottom:1px solid var(--line);padding-bottom:8px}
+h1 .brand{width:34px;height:34px;vertical-align:-8px;margin-right:10px}
 h3{font-size:16px;margin:18px 0 8px}
 .sub{color:var(--mut);margin-bottom:24px;font-size:13px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
@@ -154,9 +158,10 @@ def build_report(data: dict[str, Any]) -> Path:
 <html lang="tr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TubeLens Rapor — {_esc(data.get("channel",""))}</title>
-<style>{CSS}</style></head><body><div class="wrap">
+<link rel="icon" href="{brand.FAVICON}">
+<style>{CSS.replace("LOGO_URI", brand.FAVICON)}</style></head><body><div class="wrap">
 
-<h1>TubeLens Analiz Raporu</h1>
+<h1>{brand.SVG.replace('<svg ', '<svg class="brand" ')}TubeLens Analiz Raporu</h1>
 <div class="sub">Kanal: <b>{_esc(data.get("channel",""))}</b> · Üretilme: {_esc(generated)} ·
 Videolar: {_esc(s.get("videos",0))}</div>
 
@@ -215,7 +220,7 @@ göründüğünü gösterir (2026'da trafik büyümesinin büyük kısmı burada
 <li>Bu raporu haftalık <code>python -m tubelens scan</code> ile yenileyip skor takibi yap.</li>
 </ul>
 
-<div class="sub" style="margin-top:36px">TubeLens v0.1 · yerel analiz aracı</div>
+<div class="sub" style="margin-top:36px">{brand.SVG.replace('<svg ', '<svg style="width:15px;height:15px;vertical-align:-2px;margin-right:6px" ')}<b>TubeLens</b> v0.1 · RetroNyym · bu rapor {brand.SIGNATURE}</div>
 </div></body></html>"""
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

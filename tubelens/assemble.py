@@ -160,6 +160,8 @@ def _finalize(
     out: Path,
     target_dur: float,
     srt_path: Path | None,
+    logo: Path | None = None,
+    logo_width: int = 0,
 ) -> None:
     chain = [f"tpad=stop_mode=clone:stop_duration={target_dur:.3f}"]
     if srt_path and srt_path.exists() and srt_path.stat().st_size > 0:
@@ -177,6 +179,32 @@ def _finalize(
             "-pix_fmt", "yuv420p",
             str(out),
         ]
+
+    if logo is not None and logo.exists() and logo_width > 0:
+        # Marka filigraani: ust-sag kose, saydam PNG overlay
+        fc = (
+            f"[0:v]{','.join(chain)}[v0];"
+            f"[1:v]scale={logo_width}:-2[lw];"
+            "[v0][lw]overlay=x=main_w-w-18:y=18[v]"
+        )
+        args = [
+            "-i", str(base),
+            "-i", str(logo),
+            "-t", f"{target_dur:.3f}",
+            "-filter_complex", fc,
+            "-map", "[v]",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "20",
+            "-pix_fmt", "yuv420p",
+            str(out),
+        ]
+        try:
+            run_ffmpeg(args)
+            return
+        except AssemblyError:
+            pass  # filigransiz dener
 
     try:
         run_ffmpeg(build(",".join(chain)))
@@ -240,6 +268,7 @@ def render(
     bgm_volume: float = 0.12,
     work_dir: Path | None = None,
     timeout: int = 1800,
+    logo: Path | None = None,
 ) -> tuple[Path, float]:
     """Goruntu + seslendirmeden tam video uretir; (video yolu, sure) dondurur."""
     if not clips:
@@ -275,7 +304,8 @@ def render(
         srt_path.write_text(srt_text, encoding="utf-8")
 
     silent = work / "silent.mp4"
-    _finalize(base, silent, audio_dur, srt_path)
+    logo_width = max(48, int(size[0] * 0.13) // 2 * 2) if logo else 0
+    _finalize(base, silent, audio_dur, srt_path, logo=logo, logo_width=logo_width)
 
     _mux(silent, audio, out_path, bgm=bgm, bgm_volume=bgm_volume)
     return out_path, media_duration(out_path)

@@ -21,7 +21,7 @@ import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import config, quota, shopping, storage
+from . import brand, config, quota, shopping, storage
 from .config import ensure_dirs
 from .license import LicenseError
 from .search import run_checks
@@ -343,6 +343,16 @@ def _slugify(text: str, max_len: int = 40) -> str:
     return slug[:max_len].rstrip("-") or "video"
 
 
+def _signed_description(description: str) -> str:
+    """YouTube aciklamasinin sonuna urun imzasini ekler (mevcutsa tekrarlamaz)."""
+    desc = (description or "").strip()
+    if brand.SIGNATURE_LINE in desc:
+        return desc
+    if desc:
+        return f"{desc}\n\n{brand.SIGNATURE_LINE}"
+    return brand.SIGNATURE_LINE
+
+
 def cmd_video(args: argparse.Namespace) -> int:
     """MoneyPrinterTurbo tarzi tam video uretim hatti (kit icinde, anahtarsiz)."""
     ensure_dirs()
@@ -418,7 +428,7 @@ def cmd_video(args: argparse.Namespace) -> int:
             json.dumps(
                 {
                     "title": script["title"],
-                    "description": script.get("description", ""),
+                    "description": _signed_description(script.get("description", "")),
                     "tags": script.get("tags", []),
                     "hashtags": script.get("hashtags", []),
                     "duration_sec": 0,
@@ -493,6 +503,7 @@ def cmd_video(args: argparse.Namespace) -> int:
             bgm=Path(args.bgm) if args.bgm else None,
             bgm_volume=args.bgm_volume,
             work_dir=work_dir,
+            logo=None if getattr(args, "no_logo", False) else brand.ensure_logo_png(),
         )
     except assemble.AssemblyError as exc:
         print(f"  HATA: {exc}", file=sys.stderr)
@@ -502,7 +513,7 @@ def cmd_video(args: argparse.Namespace) -> int:
     meta = {
         "topic": args.topic,
         "title": script["title"],
-        "description": script["description"],
+        "description": _signed_description(script["description"]),
         "tags": script["tags"],
         "hashtags": script["hashtags"],
         "video_terms": script["video_terms"],
@@ -673,6 +684,7 @@ def main(argv: list[str] | None = None) -> int:
     p_video.add_argument("--bgm", help="arka plan müziği dosyası")
     p_video.add_argument("--bgm-volume", type=float, default=0.12, help="müzik sesi (0-1)")
     p_video.add_argument("--no-subs", action="store_true", help="altyazı üretme")
+    p_video.add_argument("--no-logo", action="store_true", help="marka filigranını videoya ekleme")
     p_video.add_argument("--script-only", action="store_true", help="sadece senaryo üret")
     p_video.add_argument("--out", help="çıktı klasörü (varsayılan videos/<zaman>-<slug>)")
     p_video.set_defaults(func=cmd_video)
