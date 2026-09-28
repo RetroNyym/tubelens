@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # TubeLens panel video API'si — isteğe bağlı HTTP arayüzü örneği.
 # Önce paneli başlat:  python -m tubelens panel --no-browser
-# Pexels anahtarın yoksa footage_dir alanını doldur (yerel görüntüler).
+# Kaynak zinciri: lokal klasör > Pexels > Pixabay > anahtarsız AI görsel.
+# Ses: edge/gtts anahtarsız; openai/elevenlabs API anahtarlı.
 
 BASE="http://127.0.0.1:8787"
 
@@ -17,14 +18,25 @@ curl -s -X POST "$BASE/api/video" \
     "style": "enerjik",
     "footage_dir": "",
     "pexels_key": "",
+    "pixabay_key": "",
+    "ai_visuals": true,
+    "tts_engine": "edge",
+    "voice": "",
+    "openai_key": "",
+    "elevenlabs_key": "",
     "script_only": false
   }'
 # -> {"ok": true}
 
-# 2) İlerleme ve sonuç (video.busy false olana kadar tekrarla)
+# 2) İlerleme ve sonuç (video.result dolu + video.busy false olana kadar tekrarla)
 curl -s "$BASE/api/state"
 # -> { ..., "video": { "busy": true, "log": "...", "result": null } }
 
-# 3) Üretilen video (HTTP Range destekli, seek çalışır)
+# 3) Üretilen video (HTTP Range destekli, seek çalışır; cache-bust ?t= opsiyonel)
 curl -OJ "$BASE/api/video/latest"      # video.mp4 indir
 curl -OJ "$BASE/api/video/srt"         # subtitles.srt indir
+
+# 4) Lisans aktivasyonu
+curl -s -X POST "$BASE/api/activate" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "TL1-xxxx-yyyy"}'

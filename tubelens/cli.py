@@ -258,11 +258,24 @@ def cmd_video(args: argparse.Namespace) -> int:
     from . import assemble, footage, llm, voice
 
     vconf = config.load_video_config()
-    if args.pexels_key:
-        vconf["pexels_api_key"] = args.pexels_key.strip()
+    key_fields = {
+        "pexels_api_key": args.pexels_key,
+        "pixabay_api_key": args.pixabay_key,
+        "openai_api_key": args.openai_key,
+        "elevenlabs_api_key": args.elevenlabs_key,
+    }
+    changed = False
+    for field, value in key_fields.items():
+        if value:
+            vconf[field] = value.strip()
+            changed = True
+    if changed:
         config.save_video_config(vconf)
-        print("[i] Pexels anahtari kaydedildi (data/video_config.json)")
+        print("[i] Anahtar(lar) kaydedildi (data/video_config.json)")
     pexels_key = (args.pexels_key or vconf.get("pexels_api_key") or "").strip()
+    pixabay_key = (args.pixabay_key or vconf.get("pixabay_api_key") or "").strip()
+    openai_key = (args.openai_key or vconf.get("openai_api_key") or "").strip()
+    elevenlabs_key = (args.elevenlabs_key or vconf.get("elevenlabs_api_key") or "").strip()
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = (
@@ -296,26 +309,38 @@ def cmd_video(args: argparse.Namespace) -> int:
         return 0
 
     clip_count = args.clips or max(4, min(10, round(args.duration / 4)))
-    print(f"[2/5] Goruntuler hazirlaniyor ({clip_count} klip)")
+    print(f"[2/5] Goruntuler hazirlaniyor ({clip_count} klip, kaynak zinciri)")
     try:
         clips = footage.gather(
             script["video_terms"],
             pexels_key=pexels_key,
+            pixabay_key=pixabay_key,
             footage_dir=args.footage_dir,
             dest_dir=out_dir / "assets",
             count=clip_count,
             aspect=args.aspect,
+            allow_ai=not args.no_ai_visuals,
         )
     except footage.FootageError as exc:
         print(f"  HATA: {exc}", file=sys.stderr)
         return 3
     print(f"      {len(clips)} klip hazir")
 
-    voice_name = args.voice or voice.default_voice(args.lang)
+    engine = (args.tts_engine or "edge").lower()
+    voice_name = args.voice or (voice.default_voice(args.lang) if engine == "edge" else "")
     audio_path = out_dir / "audio.mp3"
-    print(f"[3/5] Seslendirme (Edge TTS - anahtarsiz): {voice_name}")
+    print(f"[3/5] Seslendirme (motor={engine}): {voice_name or 'varsayilan ses'}")
     try:
-        words = voice.synthesize(script["script"], audio_path, voice_name)
+        words = voice.synthesize(
+            script["script"],
+            audio_path,
+            voice_name or None,
+            engine=engine,
+            lang=args.lang,
+            openai_key=openai_key,
+            elevenlabs_key=elevenlabs_key,
+            model=args.tts_model or "",
+        )
     except voice.VoiceError as exc:
         print(f"  HATA: {exc}", file=sys.stderr)
         return 4
@@ -359,7 +384,8 @@ def cmd_video(args: argparse.Namespace) -> int:
         "video_terms": script["video_terms"],
         "aspect": args.aspect,
         "resolution": args.resolution,
-        "voice": voice_name,
+        "voice": voice_name or engine,
+        "tts_engine": engine,
         "duration_sec": round(duration, 2),
         "clips": [c.name for c in clips],
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -374,7 +400,7 @@ def cmd_video(args: argparse.Namespace) -> int:
     print()
     print("=" * 60)
     print(f"Video : {final_path}")
-    print(f"Sures : {duration:.1f} sn | Format: {args.aspect} @{args.resolution}p | Ses: {voice_name}")
+    print(f"Sures : {duration:.1f} sn | Format: {args.aspect} @{args.resolution}p | Ses: {engine}/{voice_name or 'varsayilan'}")
     print(f"Baslik: {script['title']}")
     print(f"Meta  : {out_dir / 'meta.json'} (YouTube baslik/aciklama/etiketler)")
     if not args.no_subs:
@@ -391,10 +417,13 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
 
+    from . import __version__
+
     parser = argparse.ArgumentParser(
         prog="tubelens",
-        description="YouTube AI görünürlük + affiliate denetçisi",
+        description="YouTube AI görünürlük + affiliate denetçisi + video üretim kiti",
     )
+    parser.add_argument("--version", action="version", version=f"tubelens {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_scan = sub.add_parser("scan", help="video veya kanal analiz et")
@@ -439,11 +468,22 @@ def main(argv: list[str] | None = None) -> int:
     p_video.add_argument(
         "--resolution", type=int, choices=[720, 1080], default=1080, help="çözünürlük"
     )
-    p_video.add_argument("--voice", help="Edge TTS sesi (örn. tr-TR-EmelNeural)")
+    p_video.add_argument("--voice", help="ses adı (Edge: tr-TR-EmelNeural, OpenAI: alloy, ElevenLabs: voice_id)")
+    p_video.add_argument(
+        "--tts-engine",
+        choices=["edge", "gtts", "openai", "elevenlabs"],
+        default="edge",
+        help="seslendirme motoru (edge/gtts anahtarsız, openai/elevenlabs anahtarlı; varsayılan edge)",
+    )
+    p_video.add_argument("--tts-model", help="OpenAI TTS modeli (varsayılan gpt-4o-mini-tts)")
     p_video.add_argument("--style", help="ton/istil (örn. belgesel, hızlı, eğlenceli)")
     p_video.add_argument("--clips", type=int, default=0, help="görüntü klip sayısı (0 = oto)")
     p_video.add_argument("--footage-dir", help="kendi görüntülerinizin klasörü")
     p_video.add_argument("--pexels-key", help="Pexels API anahtarı (ücretsiz, kaydedilir)")
+    p_video.add_argument("--pixabay-key", help="Pixabay API anahtarı (ücretsiz, kaydedilir)")
+    p_video.add_argument("--openai-key", help="OpenAI API anahtarı (OpenAI TTS için, kaydedilir)")
+    p_video.add_argument("--elevenlabs-key", help="ElevenLabs API anahtarı (kaydedilir)")
+    p_video.add_argument("--no-ai-visuals", action="store_true", help="anahtarsız AI görsel fallback'ini kapat")
     p_video.add_argument("--bgm", help="arka plan müziği dosyası")
     p_video.add_argument("--bgm-volume", type=float, default=0.12, help="müzik sesi (0-1)")
     p_video.add_argument("--no-subs", action="store_true", help="altyazı üretme")
@@ -453,6 +493,11 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     return args.func(args)
+
+
+def main_cli() -> None:
+    """`tubelens` komut satiri girisi (pyproject [project.scripts])."""
+    raise SystemExit(main())
 
 
 if __name__ == "__main__":

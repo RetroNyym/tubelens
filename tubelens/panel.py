@@ -1,6 +1,7 @@
 """Yerel web paneli - standart kutuphane ile (127.0.0.1:8787).
 
-Sunucu, kayitli veriyi gosterir ve yeni tarama tetikler.
+Sekmeli arayuz: Tarama & Rapor | Video Uret | Durum & Lisans.
+Sunucu kayitli veriyi gosterir, tarama/video uretimini arka planda tetikler.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import threading
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from . import quota, shopping, storage
 from .config import REPORT_DIR, ensure_dirs
@@ -27,11 +28,12 @@ h1{font-size:19px;margin:0}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
 .label{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
-.value{font-size:28px;font-weight:700;margin-top:6px}
+.value{font-size:26px;font-weight:700;margin-top:6px}
 form{display:flex;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);
-border-radius:12px;padding:16px;margin:22px 0}
+border-radius:12px;padding:16px;margin:16px 0}
 input,select{background:#11141a;border:1px solid var(--line);color:var(--txt);
-border-radius:8px;padding:10px 12px;font-size:14px;min-width:240px;flex:1}
+border-radius:8px;padding:10px 12px;font-size:14px;min-width:230px;flex:1}
+input[type=checkbox]{min-width:0;flex:0;width:16px;height:16px;align-self:center;accent-color:var(--acc)}
 button{background:var(--acc);border:0;color:#fff;border-radius:8px;padding:11px 18px;
 font-weight:600;cursor:pointer;font-size:14px}
 button:hover{filter:brightness(1.1)}
@@ -48,21 +50,35 @@ tr:last-child td{border-bottom:none}
 .bar{height:9px;background:#22262f;border-radius:6px;overflow:hidden;width:110px;display:inline-block;vertical-align:middle}
 .bar>i{display:block;height:100%}
 .sub{color:var(--mut);font-size:13px}
-h2{font-size:17px;margin:32px 0 8px}
+h2{font-size:17px;margin:24px 0 8px}
 .log{background:#11141a;border:1px solid var(--line);border-radius:10px;padding:12px;
 font-family:Consolas,monospace;font-size:13px;white-space:pre-wrap;max-height:260px;overflow:auto}
 .empty{color:var(--mut);padding:24px;text-align:center;background:var(--card);
 border:1px dashed var(--line);border-radius:12px}
 a{color:var(--acc)}
+.tabs{display:flex;gap:6px;margin:4px 0 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tab{background:none;color:var(--mut);padding:12px 18px;border:1px solid transparent;
+border-bottom:none;border-radius:10px 10px 0 0;cursor:pointer;font-weight:600;font-size:14px}
+.tab.on{background:var(--card);color:var(--txt);border-color:var(--line);box-shadow:0 -2px 0 var(--acc) inset}
+.tabpanel{display:none;padding-top:6px}
+.tabpanel.on{display:block}
+.hint{font-size:13px;color:var(--mut);margin:6px 0 0}
 """
 
 PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TubeLens Panel</title><style>{CSS}</style></head><body>
-<header><h1>TubeLens — YouTube AI Görünürlük + Affiliate Paneli</h1>
+<header><h1>TubeLens — AI Görünürlük + Affiliate + Video Üretim Paneli</h1>
 <span class="sub"><span id="kota" class="badge acc" style="margin-right:12px">kota: …</span><a href="/report" target="_blank">Son HTML rapor</a></span></header>
 <div class="wrap">
 
+<div class="tabs">
+  <button class="tab on" data-tab="scan" onclick="switchTab('scan')">1 · Tarama &amp; Rapor</button>
+  <button class="tab" data-tab="video" onclick="switchTab('video')">2 · Video Üret</button>
+  <button class="tab" data-tab="status" onclick="switchTab('status')">3 · Durum &amp; Lisans</button>
+</div>
+
+<section id="tab-scan" class="tabpanel on">
 <form onsubmit="return startScan()">
   <input id="target" placeholder="Video URL, video ID veya @kanal" required>
   <input id="keywords" placeholder="Anahtar kelimeler (virgülle) — opsiyonel">
@@ -77,10 +93,20 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
   <code>python -m tubelens status</code> ·
   <code>python -m tubelens activate &lt;ANAHTAR&gt;</code>
 </div>
+<h2>Özet</h2>
+<div class="cards" id="cards"></div>
+<h2>Videolar</h2>
+<div id="videos"><div class="empty">Kayıtlı video yok. Yukarıdan bir hedef tarayın.</div></div>
+<h2>AI Görünürlük Kontrolleri</h2>
+<div id="ai"><div class="empty">Kayıtlı AI kontrolü yok.</div></div>
+</section>
 
-<h2>Video Üret <span class="sub">(senaryo → görüntü → ses → altyazı → MP4 · anahtarsız)</span></h2>
+<section id="tab-video" class="tabpanel">
+<h2>Video Üret <span class="sub">senaryo → görüntü → ses → altyazı → MP4</span></h2>
+<p class="hint">Kaynak zinciri: lokal klasör → Pexels → Pixabay → <b>anahtarsız AI görsel + Ken Burns</b>
+(son adım hiç anahtar istemez). Ses: Edge TTS / gTTS anahtarsız; OpenAI / ElevenLabs API anahtarlı.</p>
 <form onsubmit="return startVideo()">
-  <input id="vtopic" placeholder="Video konusu (örn. Sabah koşusunun 7 faydası)" required>
+  <input id="vtopic" placeholder="Video konusu (örn. Sabah koşusunun 7 faydası)" required style="min-width:100%">
   <select id="vaspect"><option value="9:16" selected>9:16 dikey (Shorts/TikTok)</option>
     <option value="16:9">16:9 yatay (YouTube)</option><option value="1:1">1:1 kare</option></select>
   <select id="vduration"><option value="30">30 sn</option><option value="45" selected>45 sn</option>
@@ -88,27 +114,58 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
   <select id="vres"><option value="1080" selected>1080p</option><option value="720">720p</option></select>
   <select id="vlang"><option value="tr" selected>Türkçe</option><option value="en">English</option></select>
   <input id="vstyle" placeholder="Ton (ops.) — belgesel, hızlı, eğlenceli">
-  <input id="vfootage" placeholder="Görüntü klasörü (ops.) — boşsa Pexels">
-  <input id="vpexels" placeholder="Pexels API anahtarı (ops., kaydedilir)">
+  <input id="vfootage" placeholder="Görüntü klasörü (ops., en öncelikli)">
+  <input id="vpexels" placeholder="Pexels API anahtarı (ops., ücretsiz)">
+  <input id="vpixabay" placeholder="Pixabay API anahtarı (ops., ücretsiz)">
+  <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:250px">
+    <input type="checkbox" id="vai" checked> AI görsel fallback (anahtarsız)</label>
+  <select id="vtts">
+    <option value="edge" selected>Edge TTS — anahtarsız (öneri)</option>
+    <option value="gtts">Google gTTS — anahtarsız</option>
+    <option value="openai">OpenAI TTS — API anahtarı</option>
+    <option value="elevenlabs">ElevenLabs — API anahtarı</option>
+  </select>
+  <input id="vvoice" placeholder="Ses adı (ops.) — Edge: tr-TR-EmelNeural · OpenAI: alloy">
+  <input id="vopenai" placeholder="OpenAI API anahtarı (ops., kaydedilir)">
+  <input id="veleven" placeholder="ElevenLabs API anahtarı (ops., kaydedilir)">
   <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:170px">
-    <input type="checkbox" id="vscript" style="min-width:0;flex:0;width:16px;height:16px"> Sadece senaryo</label>
+    <input type="checkbox" id="vscript"> Sadece senaryo</label>
   <button type="submit">Video Üret</button>
 </form>
 <div class="log" id="vlog">Video üretimi bekleniyor…</div>
 <div id="vresult"></div>
+</section>
 
-<h2>Özet</h2>
-<div class="cards" id="cards"></div>
+<section id="tab-status" class="tabpanel">
+<h2>Durum &amp; Lisans</h2>
+<div class="cards" id="statuscards"></div>
+<form onsubmit="return activate()">
+  <input id="akey" placeholder="Lisans anahtarı (TL1-… veya LemonSqueezy ürün anahtarı)" required>
+  <button type="submit">Aktive Et</button>
+</form>
+<div class="log" id="alog">Aktivasyon bekleniyor…</div>
+<p class="hint">CLI: <code>python -m tubelens status</code> ·
+<code>python -m tubelens activate &lt;ANAHTAR&gt;</code> ·
+<code>python -m tubelens deactivate</code> ·
+Video CLI: <code>python -m tubelens video &lt;KONU&gt; --tts-engine edge|gtts|openai|elevenlabs</code></p>
+</section>
 
-<h2>Videolar</h2>
-<div id="videos"><div class="empty">Kayıtlı video yok. Yukarıdan bir hedef tarayın.</div></div>
-
-<h2>AI Görünürlük Kontrolleri</h2>
-<div id="ai"><div class="empty">Kayıtlı AI kontrolü yok.</div></div>
 </div>
 <script>
 let timer=null;
 let vtimer=null;
+let vticks=0;
+let vCache=0;
+let vKey='';
+function switchTab(name){{
+  document.querySelectorAll('.tab').forEach(function(b){{
+    b.classList.toggle('on', b.dataset.tab===name);
+  }});
+  document.querySelectorAll('.tabpanel').forEach(function(s){{
+    s.classList.toggle('on', s.id==='tab-'+name);
+  }});
+  history.replaceState(null,'','#'+name);
+}}
 async function startScan(){{
   const target=document.getElementById('target').value.trim();
   const keywords=document.getElementById('keywords').value.trim();
@@ -123,14 +180,6 @@ async function startScan(){{
   timer=setInterval(poll,1200); poll();
   return false;
 }}
-async function poll(){{
-  const r=await fetch('/api/state'); const j=await r.json();
-  document.getElementById('log').textContent=j.log||'—';
-  render(j); renderVideo(j);
-  if(j.busy===false && timer && j.log.indexOf('Tarama')>-1 && j.finished){{
-    clearInterval(timer); timer=null;
-  }}
-}}
 async function startVideo(){{
   const topic=document.getElementById('vtopic').value.trim();
   if(!topic) return false;
@@ -142,6 +191,12 @@ async function startVideo(){{
     style:document.getElementById('vstyle').value.trim(),
     footage_dir:document.getElementById('vfootage').value.trim(),
     pexels_key:document.getElementById('vpexels').value.trim(),
+    pixabay_key:document.getElementById('vpixabay').value.trim(),
+    ai_visuals:document.getElementById('vai').checked,
+    tts_engine:document.getElementById('vtts').value,
+    voice:document.getElementById('vvoice').value.trim(),
+    openai_key:document.getElementById('vopenai').value.trim(),
+    elevenlabs_key:document.getElementById('veleven').value.trim(),
     script_only:document.getElementById('vscript').checked}};
   document.getElementById('vlog').textContent='Video üretimi başlatıldı…';
   document.getElementById('vresult').innerHTML='';
@@ -149,14 +204,26 @@ async function startVideo(){{
     body:JSON.stringify(payload)}});
   const j=await r.json();
   if(!j.ok){{document.getElementById('vlog').textContent='Hata: '+j.error;return false;}}
+  switchTab('video');
   if(vtimer) clearInterval(vtimer);
-  vtimer=setInterval(pollVideo,1500); pollVideo();
+  vticks=0;
+  vtimer=setInterval(poll,1500); poll();
   return false;
 }}
-async function pollVideo(){{
+async function activate(){{
+  const key=document.getElementById('akey').value.trim();
+  if(!key) return false;
+  document.getElementById('alog').textContent='Aktivasyon denendi…';
+  const r=await fetch('/api/activate',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{key}})}});
+  const j=await r.json();
+  document.getElementById('alog').textContent=(j.ok?'OK: ':'Hata: ')+(j.message||j.error||'');
+  poll();
+  return false;
+}}
+async function poll(){{
   const r=await fetch('/api/state'); const j=await r.json();
-  renderVideo(j);
-  if(j.video && j.video.busy===false && vtimer){{clearInterval(vtimer); vtimer=null;}}
+  render(j);
 }}
 function renderVideo(j){{
   const v=j.video||{{}};
@@ -168,16 +235,20 @@ function renderVideo(j){{
   if(!res){{box.innerHTML=''; return;}}
   if(!res.ok){{
     box.innerHTML='<div class="empty" style="color:var(--bad);margin-top:10px"><b>Video üretilemedi:</b> '+
-      ((res.error||'bilinmeyen hata').slice(-400))+'</div>';
+      ((res.error||'bilinmeyen hata').slice(-500))+'</div>';
     return;
   }}
+  const key=res.key||res.dir||'';
+  if(key!==vKey){{vKey=key; vCache=Date.now();}}
+  const url='/api/video/latest'+(vCache?('?t='+vCache):'');
   const media=res.video
-    ? '<video controls width="210" src="/api/video/latest"></video>'
+    ? '<video controls preload="metadata" width="210" src="'+url+'"></video>'
     : '<span class="badge ok">senaryo hazır</span>';
-  box.innerHTML='<div class="card" style="margin-top:10px"><div class="label">Son üretim</div>'+
+  box.innerHTML='<div class="card" style="margin-top:10px"><div class="label">Son üretim — '+
+    (res.engine?((res.engine)+('' + (res.engine==='edge'||res.engine==='gtts'?' (anahtarsız)':' (API)'))):'')+'</div>'+
     '<div style="margin-top:6px"><b>'+(res.title||'—')+'</b> <span class="sub">'+(res.duration||0)+' sn</span></div>'+
     '<div style="margin-top:10px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'+media+
-    '<div class="sub">'+(res.video?'<a href="/api/video/latest" download="video.mp4">video.mp4 indir</a><br>':'')+
+    '<div class="sub">'+(res.video?'<a href="'+url+'" download="video.mp4">video.mp4 indir</a><br>':'')+
     (res.video?'<a href="/api/video/srt" download="subtitles.srt">subtitles.srt</a><br>':'')+
     '<code>'+res.dir+'</code></div></div></div>';
 }}
@@ -191,6 +262,14 @@ function render(j){{
   if(k) k.textContent=j.quota||'kota: —';
   const lock=document.getElementById('lock');
   if(lock) lock.style.display=(!j.licensed && (j.quota||'').indexOf('0/')>-1)?'block':'none';
+  const sc=document.getElementById('statuscards');
+  if(sc){{
+    sc.innerHTML=`
+     <div class="card"><div class="label">Kota</div><div class="value" style="font-size:18px">${{j.quota||'—'}}</div></div>
+     <div class="card"><div class="label">Lisans</div><div class="value" style="font-size:18px">${{j.licensed?'PRO':'Ücretsiz'}}</div></div>
+     <div class="card"><div class="label">Video üretimi</div><div class="value" style="font-size:18px">${{j.video&&j.video.busy?'çalışıyor':(j.video&&j.video.result&&j.video.result.ok?'son üretim hazır':'bekliyor')}}</div></div>
+     <div class="card"><div class="label">Panel</div><div class="value" style="font-size:18px">127.0.0.1:8787</div></div>`;
+  }}
   document.getElementById('cards').innerHTML=`
    <div class="card"><div class="label">Fırsat Skoru</div><div class="value">${{s.avg_score??0}}</div></div>
    <div class="card"><div class="label">Video</div><div class="value">${{s.videos??0}}</div></div>
@@ -212,8 +291,27 @@ function render(j){{
         c.engines.map(e=>`<td>${{e.ok?(e.found?'<span class="badge ok">#'+e.rank+(e.in_ai?'+AI':'')+'</span>':'<span class="badge warn">yok</span>'):'<span class="badge bad">hata</span>'}}</td>`).join('')+
         `<td>${{bar(c.score)}}</td></tr>`).join('')+`</table>`;
   }}
+  const lg=document.getElementById('log');
+  if(lg && j.log) lg.textContent=j.log;
+  const al=document.getElementById('alog');
+  if(al && j.activate_log) al.textContent=j.activate_log;
+  renderVideo(j);
+  if(j.video&&j.video.result&&!j.video.busy&&vtimer){{
+    clearInterval(vtimer); vtimer=null;
+  }}
+  if(vtimer){{
+    vticks++;
+    if(vticks>800){{clearInterval(vtimer); vtimer=null;}}
+  }}
+  if(j.busy===false && timer && j.finished){{
+    clearInterval(timer); timer=null;
+  }}
 }}
-poll(); setInterval(poll,4000);
+(function init(){{
+  const h=(location.hash||'').replace('#','');
+  if(h==='video'||h==='status'||h==='scan') switchTab(h);
+  poll(); setInterval(poll,4000);
+}})();
 </script></body></html>"""
 
 
@@ -227,6 +325,7 @@ class _State:
         self.video_busy = False
         self.video_log = "Video üretimi bekleniyor…"
         self.video_result: dict | None = None
+        self.activate_log = "Aktivasyon bekleniyor…"
 
 
 STATE = _State()
@@ -260,6 +359,7 @@ def _state_payload() -> dict:
         "summary": shopping.channel_summary(analyses),
         "quota": quota.summary_line(),
         "licensed": quota.is_licensed(),
+        "activate_log": STATE.activate_log,
         "video": {
             "busy": STATE.video_busy,
             "log": STATE.video_log,
@@ -295,6 +395,25 @@ def _run_scan(target: str, keywords: str, limit: int) -> None:
         STATE.last_ai = []
 
 
+def _run_activate(key: str) -> None:
+    import subprocess
+    import sys
+
+    from .config import ROOT
+
+    STATE.activate_log = f"Deneniyor: {key[:12]}…"
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "tubelens", "activate", key],
+            cwd=str(ROOT), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=45,
+        )
+        out = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        STATE.activate_log = out[-600:] or ("OK" if proc.returncode == 0 else "Basarisiz")
+    except Exception as exc:  # noqa: BLE001
+        STATE.activate_log = f"Aktivasyon hatasi: {exc}"
+
+
 def _latest_video_path():
     from .config import VIDEO_DIR
 
@@ -317,23 +436,32 @@ def _run_video(params: dict) -> None:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = VIDEO_DIR / f"panel-{stamp}"
     cmd = [sys.executable, "-m", "tubelens", "video", str(params.get("topic", "")), "--out", str(out_dir)]
-    if params.get("lang"):
-        cmd += ["--lang", str(params["lang"])]
-    if params.get("duration"):
-        cmd += ["--duration", str(int(params["duration"]))]
-    if params.get("aspect"):
-        cmd += ["--aspect", str(params["aspect"])]
-    if params.get("resolution"):
-        cmd += ["--resolution", str(int(params["resolution"]))]
-    if params.get("style"):
-        cmd += ["--style", str(params["style"])]
-    if params.get("footage_dir"):
-        cmd += ["--footage-dir", str(params["footage_dir"])]
-    if params.get("pexels_key"):
-        cmd += ["--pexels-key", str(params["pexels_key"])]
+    opt_map = {
+        "lang": "--lang",
+        "aspect": "--aspect",
+        "style": "--style",
+        "footage_dir": "--footage-dir",
+        "pexels_key": "--pexels-key",
+        "pixabay_key": "--pixabay-key",
+        "tts_engine": "--tts-engine",
+        "voice": "--voice",
+        "openai_key": "--openai-key",
+        "elevenlabs_key": "--elevenlabs-key",
+        "tts_model": "--tts-model",
+    }
+    for field, flag in opt_map.items():
+        value = params.get(field)
+        if value:
+            cmd += [flag, str(value)]
+    for field, flag in (("duration", "--duration"), ("resolution", "--resolution")):
+        if params.get(field):
+            cmd += [flag, str(int(params[field]))]
     if params.get("script_only"):
         cmd += ["--script-only"]
-    STATE.video_log = f"Video üretimi başladı: {params.get('topic', '')}"
+    if not params.get("ai_visuals", True):
+        cmd += ["--no-ai-visuals"]
+    engine = str(params.get("tts_engine") or "edge")
+    STATE.video_log = f"Video üretimi başladı: {params.get('topic', '')} (motor={engine})"
     try:
         proc = subprocess.run(
             cmd, cwd=str(ROOT), capture_output=True, text=True,
@@ -350,19 +478,21 @@ def _run_video(params: dict) -> None:
             except (json.JSONDecodeError, OSError):
                 meta = {}
         STATE.video_result = {
-            "ok": proc.returncode == 0 and video.exists(),
+            "ok": proc.returncode == 0 and (video.exists() or meta.get("title")),
             "dir": str(out_dir),
+            "key": out_dir.name,
             "video": video.exists(),
             "title": meta.get("title", ""),
             "duration": meta.get("duration_sec", 0),
+            "engine": meta.get("tts_engine", engine),
             "error": "" if proc.returncode == 0 else (out[-600:] or "bilinmeyen hata"),
         }
     except subprocess.TimeoutExpired:
-        STATE.video_result = {"ok": False, "dir": str(out_dir), "video": False,
-                              "title": "", "duration": 0, "error": "Zaman aşımı (30 dk)"}
+        STATE.video_result = {"ok": False, "dir": str(out_dir), "key": out_dir.name, "video": False,
+                              "title": "", "duration": 0, "engine": engine, "error": "Zaman aşımı (30 dk)"}
     except Exception as exc:  # noqa: BLE001
-        STATE.video_result = {"ok": False, "dir": str(out_dir), "video": False,
-                              "title": "", "duration": 0, "error": str(exc)}
+        STATE.video_result = {"ok": False, "dir": str(out_dir), "key": out_dir.name, "video": False,
+                              "title": "", "duration": 0, "engine": engine, "error": str(exc)}
     finally:
         STATE.video_busy = False
 
@@ -375,6 +505,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -428,6 +559,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(206)
             self.send_header("Content-Type", ctype)
             self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}")
             self.send_header("Content-Length", str(len(chunk)))
             self.end_headers()
@@ -436,13 +568,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path not in ("/api/scan", "/api/video"):
+        if parsed.path not in ("/api/scan", "/api/video", "/api/activate"):
             self._send(b"404", code=404)
             return
         length = int(self.headers.get("Content-Length", 0) or 0)
@@ -451,6 +584,16 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             payload = {}
+
+        if parsed.path == "/api/activate":
+            key = str(payload.get("key", "")).strip()
+            if not key:
+                self._send(json.dumps({"ok": False, "error": "anahtar gerekli"}).encode(), "application/json")
+                return
+            thread = threading.Thread(target=_run_activate, args=(key,), daemon=True)
+            thread.start()
+            self._send(json.dumps({"ok": True}).encode(), "application/json")
+            return
 
         if parsed.path == "/api/video":
             topic = str(payload.get("topic", "")).strip()

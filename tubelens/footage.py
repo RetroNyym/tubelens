@@ -1,12 +1,14 @@
-"""Video goruntu kaynaklari: Pexels (ucretsiz anahtar) veya lokal klasor.
+"""Video goruntu kaynaklari - coklu kaynak zinciri.
 
-MoneyPrinterTurbo tarzi pipeline icin stok/lorek goruntuleri hazirlar.
+Sira: lokal klasor -> Pexels (anahtar) -> Pixabay (anahtar) ->
+Pollinations AI gorsel + Ken Burns (ANAHTARSIZ son kaynak, asla bos kalmaz).
 """
 
 from __future__ import annotations
 
 import random
 import time
+import urllib.parse
 from pathlib import Path
 
 import requests
@@ -14,6 +16,8 @@ import requests
 from .config import HEADERS, POLITE_DELAY, REQUEST_TIMEOUT
 
 PEXELS_SEARCH_URL = "https://api.pexels.com/videos/search"
+PIXABAY_SEARCH_URL = "https://pixabay.com/api/videos/"
+POLLINATIONS_IMAGE_URL = "https://image.pollinations.ai/prompt/"
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 
 _last_call = 0.0
@@ -164,23 +168,215 @@ def from_pexels(
     return picked
 
 
+def from_pixabay(
+    queries: list[str],
+    api_key: str,
+    dest_dir: Path,
+    count: int,
+    aspect: str = "9:16",
+) -> list[Path]:
+    """Pixabay video API'sinden (ucretsiz anahtar) stok goruntu indirir."""
+    if not api_key:
+        raise FootageError("Pixabay API anahtari yok")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    picked: list[Path] = []
+    seen: set[int] = set()
+    per_query = max(1, count // max(1, len(queries)) + 1)
+
+    for query in queries:
+        if len(picked) >= count:
+            break
+        _polite()
+        params = {"key": api_key, "q": query, "per_page": per_query * 2, "safesearch": "true"}
+        try:
+            resp = requests.get(
+                PIXABAY_SEARCH_URL, params=params, headers=HEADERS, timeout=REQUEST_TIMEOUT
+            )
+        except requests.RequestException as exc:
+            raise FootageError(f"Pixabay istegi hatasi: {exc}") from exc
+        if resp.status_code in (400, 401, 403):
+            raise FootageError("Pixabay API anahtari gecersiz")
+        if resp.status_code == 429:
+            raise FootageError("Pixabay limit asimi (429); biraz bekleyin")
+        if resp.status_code != 200:
+            raise FootageError(f"Pixabay HTTP {resp.status_code}")
+        try:
+            hits = resp.json().get("hits") or []
+        except ValueError as exc:
+            raise FootageError("Pixabay yaniti JSON degil") from exc
+
+        for hit in hits:
+            if len(picked) >= count:
+                break
+            vid = int(hit.get("id") or 0)
+            if not vid or vid in seen:
+                continue
+            url, width, height = _pick_pixabay_file(hit.get("videos") or {}, aspect)
+            if not url:
+                continue
+            seen.add(vid)
+            dest = dest_dir / f"pixabay_{vid}.mp4"
+            if dest.exists() and dest.stat().st_size > 10_000:
+                picked.append(dest)
+                continue
+            try:
+                picked.append(_download(url, dest))
+            except FootageError:
+                continue
+
+    if not picked:
+        raise FootageError("Pixabay sonuc bulunamadi; kelimeleri degistirin")
+    return picked
+
+
+def _pick_pixabay_file(videos: dict, aspect: str) -> tuple[str, int, int]:
+    best: tuple[int, str, int, int] = (0, "", 0, 0)
+    for item in videos.values():
+        url = item.get("url") or ""
+        w = int(item.get("width") or 0)
+        h = int(item.get("height") or 0)
+        if not url or not w or not h:
+            continue
+        if aspect == "9:16" and h < w:
+            continue
+        if aspect == "16:9" and w < h:
+            continue
+        score = w * h
+        if score > best[0]:
+            best = (score, url, w, h)
+    if best[1]:
+        return best[1], best[2], best[3]
+    for item in videos.values():
+        url = item.get("url") or ""
+        if url:
+            return url, int(item.get("width") or 0), int(item.get("height") or 0)
+    return "", 0, 0
+
+
+def _ai_image_size(aspect: str) -> tuple[int, int]:
+    return {"9:16": (768, 1344), "16:9": (1344, 768), "1:1": (1024, 1024)}.get(
+        aspect, (768, 1344)
+    )
+
+
+def _still_to_clip(img: Path, dest: Path, size: tuple[int, int], dur: float = 3.4) -> Path:
+    """Tek bir gorseli Ken Burns (yavas zoom) ile klip'e cevirir."""
+    import subprocess
+
+    from .assemble import ffmpeg_exe
+
+    w, h = size
+    frames = max(30, int(dur * 30))
+    vf = (
+        f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,"
+        f"crop={w * 2}:{h * 2},"
+        f"zoompan=z='min(zoom+0.0011,1.22)':"
+        f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"d={frames}:s={w}x{h}:fps=30,format=yuv420p"
+    )
+    cmd = [
+        ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(img), "-vf", vf, "-frames:v", str(frames),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-an", str(dest),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if proc.returncode != 0 or not dest.exists() or dest.stat().st_size < 10_000:
+        dest.unlink(missing_ok=True)
+        raise FootageError(f"Ken Burns klip uretilemedi: {(proc.stderr or '')[-300:]}")
+    return dest
+
+
+def from_ai_images(
+    queries: list[str],
+    dest_dir: Path,
+    count: int,
+    aspect: str = "9:16",
+) -> list[Path]:
+    """ANAHTARSIZ son kaynak: Pollinations ile gorsel uret, Ken Burns ile klip yap."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    size = _ai_image_size(aspect)
+    picked: list[Path] = []
+    pool = list(queries) or ["cinematic abstract background"]
+    random.shuffle(pool)
+
+    for i in range(count):
+        query = pool[i % len(pool)]
+        dest = dest_dir / f"aivis_{i:02d}.mp4"
+        if dest.exists() and dest.stat().st_size > 10_000:
+            picked.append(dest)
+            continue
+        prompt = (
+            f"{query}, cinematic b-roll still, natural light, shallow depth of field, "
+            "photorealistic, high detail, no text"
+        )
+        url = (
+            POLLINATIONS_IMAGE_URL
+            + urllib.parse.quote(prompt)
+            + f"?width={size[0]}&height={size[1]}&nologo=true&seed={random.randint(1, 10**6)}&model=flux"
+        )
+        img = dest_dir / f"aivis_{i:02d}.jpg"
+        last_err = ""
+        for attempt in range(2):
+            try:
+                _download(url, img)
+                last_err = ""
+                break
+            except FootageError as exc:
+                last_err = str(exc)
+                time.sleep(3 + attempt * 3)
+        if last_err:
+            raise FootageError(f"AI gorsel indirilemedi ({query!r}): {last_err}")
+        try:
+            picked.append(_still_to_clip(img, dest, size))
+        except FootageError:
+            continue
+
+    if len(picked) < count:
+        raise FootageError("AI gorsel klip uretimi basarisiz oldu")
+    return picked
+
+
 def gather(
     queries: list[str],
     *,
     pexels_key: str = "",
+    pixabay_key: str = "",
     footage_dir: str | Path | None = None,
     dest_dir: Path,
     count: int = 6,
     aspect: str = "9:16",
+    allow_ai: bool = True,
 ) -> list[Path]:
-    """Kaynak secimi: lokal klasor varsa o, yoksa Pexels."""
+    """Kaynak zinciri: lokal -> Pexels -> Pixabay -> AI gorsel (asla bos kalmaz)."""
     if footage_dir:
         return from_local(Path(footage_dir), count)
-    if not pexels_key:
-        raise FootageError(
-            "Goruntu kaynagi yok. Iki ucretsiz secenek:\n"
-            "  1) https://www.pexels.com/api/ ucretsiz anahtari alin ve\n"
-            "     python -m tubelens video <konu> --pexels-key ANAHTAR   (bir kez, kaydedilir)\n"
-            "  2) kendi videolarinizi verin: --footage-dir C:\\klasor"
-        )
-    return from_pexels(queries, pexels_key, dest_dir, count, aspect)
+
+    problems: list[str] = []
+    if pexels_key:
+        try:
+            return from_pexels(queries, pexels_key, dest_dir, count, aspect)
+        except FootageError as exc:
+            problems.append(f"Pexels: {exc}")
+    else:
+        problems.append("Pexels: anahtar yok (https://www.pexels.com/api/)")
+
+    if pixabay_key:
+        try:
+            return from_pixabay(queries, pixabay_key, dest_dir, count, aspect)
+        except FootageError as exc:
+            problems.append(f"Pixabay: {exc}")
+    else:
+        problems.append("Pixabay: anahtar yok (https://pixabay.com/api/docs/)")
+
+    if allow_ai:
+        try:
+            return from_ai_images(queries, dest_dir, count, aspect)
+        except FootageError as exc:
+            problems.append(f"AI gorsel: {exc}")
+
+    raise FootageError(
+        "Goruntu kaynagi bulunamadi:\n  - "
+        + "\n  - ".join(problems)
+        + "\nCozumler: --pexels-key / --pixabay-key (ucretsiz), --footage-dir C:\\klasor "
+        "ya da AI gorselleri acik tutun (varsayilan acik)"
+    )

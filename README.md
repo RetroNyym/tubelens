@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](requirements.txt)
+[![CI](https://github.com/RetroNyym/tubelens/actions/workflows/ci.yml/badge.svg)](https://github.com/RetroNyym/tubelens/actions/workflows/ci.yml)
 [![Free queries](https://img.shields.io/badge/ücretsiz%20sorgu-5-brightgreen.svg)](#ücretsiz-plan-ve-lisans)
 [![Video kit](https://img.shields.io/badge/video-MP4%20üretimi-brightgreen.svg)](#3-tubelens-video-kit--para-basan-video-hattı)
 
@@ -54,16 +55,33 @@ MoneyPrinterTurbo tarzı, **kendi kitimiz** olarak doğrudan CLI'ye gömülü ta
 üretim hattı. Tek komutla konudan bitmiş MP4'e:
 
 - **Senaryo** → anahtarsız Pollinations LLM (hook, anlatım, SEO başlık/açıklama/etiket + İngilizce stok görüntü kelimeleri)
-- **Görüntü** → Pexels (ücretsiz anahtar) veya `--footage-dir` ile kendi videolarınız
-- **Seslendirme** → Edge TTS (**anahtarsız**, 100+ ses, TR/EN/DE/FR/ES/AR/RU)
+- **Görüntü** → dört kademeli kaynak zinciri (ilk elenen geçer, **hiçbirinde anahtar yoksa bile üretilir**):
+
+  | Sıra | Kaynak | Anahtar |
+  |---|---|---|
+  | 1 | `--footage-dir` kendi görüntüleriniz | gerekmez |
+  | 2 | Pexels API | ücretsiz |
+  | 3 | Pixabay API | ücretsiz |
+  | 4 | **Pollinations AI görsel + Ken Burns** (anahtarsız) | **yok** |
+
+- **Seslendirme** → 4 motor (`--tts-engine`):
+
+  | Motor | Anahtar | Kelime zamanlaması |
+  |---|---|---|
+  | `edge` (varsayılan) | **yok** | gerçek (WordBoundary) |
+  | `gtts` | **yok** | tahmini (orantılı) |
+  | `openai` | OpenAI API | tahmini (orantılı) |
+  | `elevenlabs` | ElevenLabs API | **gerçek** (karakter bazlı) |
+
 - **Altyazı** → kelime bazlı zamanlamadan SRT + videoya yakma (libass)
 - **Montaj** → FFmpeg: hedef çözünürlüğe indirme (cover-crop), klip birleştirme, ses kalibrasyonu, opsiyonel arka plan müziği, `+faststart`
 
 Çıktı klasöründe: `video.mp4`, `script.json` / `script.txt`, `audio.mp3`,
 `subtitles.srt` ve YouTube'a yükleme için hazır `meta.json` (başlık/açıklama/etiketler).
 
-> **Ücretsiz ve anahtarsız:** senaryo + TTS + altyazı + montaj tamamen anahtarsız çalışır.
-> Tek isteğe bağlı anahtar, stok görüntüler için ücretsiz Pexels API'sidir.
+> **Ücretsiz ve anahtarsız:** senaryo + TTS (edge/gtts) + altyazı + montaj + AI görsel
+> tamamen anahtarsız çalışır. Pexels/Pixabay anahtarları isteğe bağlı hız/kalite artışıdır;
+> OpenAI/ElevenLabs yalnızca daha iyi ses isteyenler içindir.
 
 ---
 
@@ -74,7 +92,11 @@ git clone https://github.com/RetroNyym/tubelens.git
 cd tubelens
 python -m venv .venv
 .venv\Scripts\activate        # Windows — Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e .              # `tubelens` komutunu da kurar (alternatif: -r requirements.txt)
+
+# doğrulama + testler (offline, ~5 sn)
+tubelens --version
+python -m pytest
 ```
 
 Gereksinim: **Python 3.11+**, internet erişimi. YouTube Data API anahtarı **gerekmez**.
@@ -97,7 +119,7 @@ python -m tubelens scan "@mkbhd" --limit 5 --keywords "en iyi bütçe laptop 202
 # Kayıtlı veriden HTML rapor üret
 python -m tubelens report
 
-# Yerel panel (tarayıcıda açılır)
+# Yerel panel (tarayıcıda açılır) — 3 sekmeli: Tarama & Rapor | Video Üret | Durum & Lisans
 python -m tubelens panel
 
 # Video Kit: konudan bitmiş videoya (senaryo + görüntü + ses + altyazı)
@@ -106,23 +128,31 @@ python -m tubelens video "Sabah koşusunun 7 faydası"
 # Sadece senaryo üret (YouTube başlık/açıklama/etiketler dahil)
 python -m tubelens video "Yapay zeka nedir" --script-only
 
-# Kendi görüntülerinle + arka plan müziğiyle, yatay 720p
-python -m tubelens video "Kahve demleme sırları" --aspect 16:9 --resolution 720 \
-  --footage-dir "C:\footage" --bgm music.mp3
+# Anahtarsız tam üretim: AI görsel (Ken Burns) + Google gTTS seslendirme
+python -m tubelens video "Gülümsemenin enerji veren etkisi" --tts-engine gtts
 
-# Pexels anahtarını bir kez kaydet (ücretsiz: https://www.pexels.com/api/)
-python -m tubelens video "konu" --pexels-key PTL_ANAHTAR
+# ElevenLabs ile profesyonel ses + gerçek kelime zamanlaması
+python -m tubelens video "Kahve demleme sırları" --tts-engine elevenlabs --elevenlabs-key ANAHTAR
+
+# Pixabay + Pexels anahtarlarıyla stok görüntüler, yatay 720p
+python -m tubelens video "Kahve demleme" --aspect 16:9 --resolution 720 \
+  --footage-dir "C:\footage" --pixabay-key PIX_KEY --bgm music.mp3
+
+# Pexels/Pixabay anahtarını bir kez kaydet (ücretsiz: pexels.com/api · pixabay.com/api/docs)
+python -m tubelens video "konu" --pexels-key PTL_ANAHTAR --pixabay-key PBX_ANAHTAR
 ```
 
 - **CLI:** çıktı `reports/report_*.html` dosyasına yazılır.
-- **Panel:** `http://127.0.0.1:8787` — formdan tarama **ve video üretimi** başlatır,
-  sonuçları tablo olarak gösterir, son HTML raporu `/report` adresinde açılır.
-  Üretilen video panelde oynatılır ve `/api/video/latest` adresinden indirilir
-  (HTTP Range destekli). Headless ortam için: `python -m tubelens panel --no-browser`.
+- **Panel:** `http://127.0.0.1:8787` — **3 sekme**: *Tarama & Rapor* (analiz tabloları),
+  *Video Üret* (kaynak/ses motoru seçimli üretim formu + oynatıcı), *Durum & Lisans*
+  (kota, lisans aktivasyon formu). Üretilen video panelde oynatılır ve
+  `/api/video/latest` adresinden indirilir (HTTP Range destekli, cache-bust'lu).
+  Headless ortam için: `python -m tubelens panel --no-browser`.
 - **Panel video API'si:** `POST /api/video` gövdesi:
-  `{topic, lang, duration, aspect, resolution, style, footage_dir, pexels_key, script_only}`;
-  ilerleme `/api/state` → `video` alanında, son üretim `/api/video/latest` + `/api/video/srt`.
-  Pexels anahtarı yoksa `footage_dir` dolu olmalı. Üretim ≈1–2 dk sürer.
+  `{topic, lang, duration, aspect, resolution, style, footage_dir, pexels_key, pixabay_key,
+  ai_visuals, tts_engine, voice, openai_key, elevenlabs_key, script_only}`;
+  ilerleme `/api/state` → `video` alanında, son üretim `/api/video/latest` + `/api/video/srt`;
+  lisans: `POST /api/activate` `{key}`. Üretim ≈1–3 dk sürer.
 - **Video Kit:** çıktı `videos/<zaman>-<slug>/` klasörüne yazılır; en son üretim
   `videos/` altında kalır, depoya girmez. `video --help` tüm seçenekleri listeler
   (`--lang`, `--duration`, `--aspect 9:16|16:9|1:1`, `--voice`, `--clips`,
@@ -254,16 +284,20 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 | `quota.py` | Freemium kota (5 sorgu) + lisans durumu |
 | `license.py` | LemonSqueezy License API: activate / validate / deactivate, 7 gün yenileme, 30 gün tolerans |
 | `report.py` | Tek dosya HTML rapor (`reports/latest.html`) |
-| `panel.py` | Standart kütüphane HTTP paneli: tarama + video üretim API'si, oynatıcı/indirme (Range) |
-| `cli.py` | `scan` / `report` / `panel` / `video` / `status` / `activate` / `deactivate` / `keygen` |
+| `panel.py` | Sekmeli HTTP paneli: tarama + video üretim API'si + lisans aktivasyon, oynatıcı/indirme (Range) |
+| `cli.py` | `scan` / `report` / `panel` / `video` / `status` / `activate` / `deactivate` / `keygen` (`--version`) |
 | `storage.py` | `data/store.json` kayıt deposu (tarama geçmişi) |
 | `llm.py` | Anahtarsız Pollinations LLM istemcisi + MPT tarzı senaryo üretici (JSON şema, cache-kırma retry) |
-| `footage.py` | Görüntü kaynağı: Pexels arama/indirme veya lokal klasör |
-| `voice.py` | Edge TTS seslendirme + kelime bazlı zamanlamalar |
+| `footage.py` | Görüntü kaynak zinciri: lokal → Pexels → Pixabay → **Pollinations AI görsel + Ken Burns (anahtarsız)** |
+| `voice.py` | 4 TTS motoru: Edge / gTTS (anahtarsız), OpenAI / ElevenLabs (anahtarlı) + kelime zamanlamaları |
 | `assemble.py` | FFmpeg montaj: scale/crop, concat, tpad, SRT yakma, ses mix |
 
+Kurulum/test altyapısı: `pyproject.toml` (`pip install -e .` → `tubelens` komutu),
+`tests/` (33 birim/smoke test, tamamı offline), GitHub Actions CI (Ubuntu + Windows).
+
 İstekler kibar gecikmeli (`POLITE_DELAY = 0.8s`), tek bir User-Agent ile atılır.
-Video kiti ağ istekleri: Pollinations (senaryo), Pexels (görüntü), Microsoft Edge TTS (ses).
+Video kiti ağ istekleri: Pollinations (senaryo + AI görsel), Pexels/Pixabay (stok,
+opsiyonel), Edge TTS / gTTS (ses, anahtarsız), OpenAI/ElevenLabs (ses, anahtarlı).
 
 ---
 
@@ -287,8 +321,11 @@ Video kiti ağ istekleri: Pollinations (senaryo), Pexels (görüntü), Microsoft
 - [ ] Rakip AI görünürlüğü karşılaştırma (aynı sorguda kim önde?)
 - [ ] Toplu CSV dışa/içe aktarma ve planlı tarama (`cron`)
 - [ ] Kanal bazlı affiliate boşluk raporu (hangi videoda hangi program eksik)
-- [ ] Video kiti: Pixabay/Coverr kaynakları
+- [x] Görüntü: Pixabay + anahtarsız AI görsel/Ken Burns kaynak zinciri
 - [x] Panel üzerinden video üretimi (Video Üret formu + oynatıcı/indirme)
+- [x] Panel sekmeleri: Tarama & Rapor | Video Üret | Durum & Lisans (+ aktivasyon)
+- [x] TTS motorları: Edge + gTTS (anahtarsız), OpenAI + ElevenLabs (anahtarlı)
+- [x] Altyapı: pyproject kurulumu, 33 test, GitHub Actions CI
 
 ---
 
