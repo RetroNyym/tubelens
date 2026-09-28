@@ -96,12 +96,19 @@ def generate_key(days: int | None = None) -> str:
 
 
 def validate_key(key: str) -> dict:
-    """Anahtari dogrular, payload dondurur. Gecersizse ValueError firlatir."""
+    """Anahtari dogrular, payload dondurur. Gecersizse ValueError firlatir.
+
+    Ayristirma dikkatlidir: body ve imza base64url oldugu icin tire icerebilir;
+    bu yuzden `split("-")` kullanilmaz. Imza her zaman 18 byte SHA-256 -> 24 karakter.
+    """
     key = (key or "").strip()
-    parts = key.split("-")
-    if len(parts) != 3 or parts[0] != _PREFIX:
+    prefix = f"{_PREFIX}-"
+    if not key.startswith(prefix) or len(key) <= len(prefix) + 25:
         raise ValueError("Anahtar biçimi hatalı (ör. TL1-...-... olmalı)")
-    body, sig = parts[1], parts[2]
+    rest = key[len(prefix) :]
+    if rest[-25] != "-":
+        raise ValueError("Anahtar biçimi hatalı (ör. TL1-...-... olmalı)")
+    body, sig = rest[:-25], rest[-24:]
     if not hmac.compare_digest(sig, _sign(body.encode("ascii"))):
         raise ValueError("Anahtar imzası geçersiz")
     try:

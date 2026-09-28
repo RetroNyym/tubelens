@@ -22,3 +22,6 @@ Thumbs.db
 
 # Test ayakkabısı ayak izleri
 _test_footage/
+
+# Satici lisans anahtarlari (asla depoya girmez)
+/data/keys/

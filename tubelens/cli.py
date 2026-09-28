@@ -240,9 +240,30 @@ def cmd_deactivate(_args: argparse.Namespace) -> int:
 
 
 def cmd_keygen(args: argparse.Namespace) -> int:
-    key = quota.generate_key(days=args.days)
-    print(key)
-    print(f"(geçerlilik: {args.days} gün)" if args.days else "(geçerlilik: sınırsız)")
+    count = max(1, int(args.count or 1))
+    keys = [quota.generate_key(days=args.days) for _ in range(count)]
+    for key in keys:
+        quota.validate_key(key)  # uretim aninda donus dogrulamasi
+    validity = f"{args.days} gun" if args.days else "sinirsiz"
+    if args.csv:
+        import csv as _csv
+
+        path = Path(args.csv)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        new_file = not path.exists() or path.stat().st_size == 0
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        with path.open("a", newline="", encoding="utf-8") as fh:
+            writer = _csv.writer(fh)
+            if new_file:
+                writer.writerow(["key", "days", "generated_at", "status"])
+            for key in keys:
+                writer.writerow([key, args.days or "unlimited", stamp, "new"])
+        print(f"{len(keys)} anahtar yazildi: {path} (gecerlilik: {validity})")
+        print("Musteri aktivasyonu: python -m tubelens activate <ANAHTAR>")
+    else:
+        for key in keys:
+            print(key)
+        print(f"({len(keys)} anahtar, gecerlilik: {validity})")
     return 0
 
 
@@ -451,6 +472,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p_key = sub.add_parser("keygen", help="satıcı: lisans anahtarı üret")
     p_key.add_argument("--days", type=int, default=0, help="geçerlilik gün (0 = sınırsız)")
+    p_key.add_argument("--count", type=int, default=1, help="üretilecek anahtar sayısı (varsayılan 1)")
+    p_key.add_argument("--csv", help="anahtarları CSV dosyasına ekle (müşteriye gönderim listesi)")
     p_key.set_defaults(func=cmd_keygen)
 
     p_video = sub.add_parser(

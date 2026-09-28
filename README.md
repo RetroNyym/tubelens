@@ -269,6 +269,28 @@ python -m tubelens status         # kalan hak / lisans detayı
 satışları `data/` dışındaki bir kayıt defterine yazabilirsin; müşteri tarafında
 zaten License API doğrulaması yapıldığı için bu zorunlu değildir.
 
+### Toplu anahtar üretimi — müşteriye gönderim (satıcı)
+
+```bash
+# 100 adet 1 yıllık anahtar -> data/keys/satis-365gun.csv
+python -m tubelens keygen --days 365 --count 100 --csv data/keys/satis-365gun.csv
+
+# 20 adet sınırsız anahtar -> data/keys/satis-sinirsiz.csv
+python -m tubelens keygen --days 0 --count 20 --csv data/keys/satis-sinirsiz.csv
+
+# Tek anahtar (konsola basar)
+python -m tubelens keygen --days 365
+```
+
+- **Akış:** satışta müşteriye CSV'den bir `TL1-…` anahtarı olduğu gibi gönderirsin;
+  müşteri kendi makinesinde `python -m tubelens activate <ANAHTAR>` der.
+  Anahtar **HMAC-SHA256 imzalıdır** — aktivasyon internet *istemz*, çevrimdışı
+  doğrulanır; her anahtar tek cihazda aktifleşir (`deactivate` ile serbest kalır).
+- **CSV sütunları:** `key, days, generated_at, status` — gönderdiğin anahtarın
+  `status`'unu *sent/active* olarak güncelleyip satış takibi yapabilirsin.
+- **Güvenlik:** `/data/keys/` `.gitignore`'dadır, anahtarlar depoya girmez.
+  Sınırsız sayıda üretebilirsin; her üretim anında kendini doğrular.
+
 ---
 
 ## Nasıl çalışıyor?
