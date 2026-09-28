@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Kurulum
-        run: python -m pip install -e ".[dev]"
+        run: python -m pip install --retries 10 --timeout 60 -e ".[dev]"
       - name: Surum
         run: python -m tubelens --version
       - name: Testler
