@@ -1,0 +1,41 @@
+{
+  "topic": "Gülüşü güzelleştiren 3 alışkanlık",
+  "title": "3 Alışkanlıkla Gülüşünüzü Büyütün!",
+  "description": "Bu enerjik 15 saniyelik videoda, gülüşünüzü güzelleştirecek üç basit alışkanlığı keşfedin!",
+  "tags": [
+    "gülüş",
+    "alışkanlık",
+    "enerji",
+    "güzellik",
+    "saçbakımı",
+    "morningroutine"
+  ],
+  "hashtags": [
+    "gülüş",
+    "alışkanlık",
+    "enerji",
+    "güzellik",
+    "saçbakımı"
+  ],
+  "video_terms": [
+    "sunny shower",
+    "fresh flowers",
+    "hair styling",
+    "bright smile",
+    "morning routine",
+    "natural light",
+    "confidence boost",
+    "minimal accessories"
+  ],
+  "aspect": "9:16",
+  "resolution": 720,
+  "voice": "tr-TR-ahmetNeural",
+  "duration_sec": 19.3,
+  "clips": [
+    "clip2.mp4",
+    "clip3.mp4",
+    "clip1.mp4",
+    "clip2.mp4"
+  ],
+  "generated_at": "2026-09-28 07:48 UTC"
+}

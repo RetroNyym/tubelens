@@ -3,11 +3,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](requirements.txt)
 [![Free queries](https://img.shields.io/badge/ücretsiz%20sorgu-5-brightgreen.svg)](#ücretsiz-plan-ve-lisans)
+[![Video kit](https://img.shields.io/badge/video-MP4%20üretimi-brightgreen.svg)](#3-tubelens-video-kit---para-basan-video-hattı)
 
 **YouTube AI arama görünürlüğü + affiliate gelir denetçisi.**
-Tek komutla bir videonun ya da kanalın: yapay zekâ özetlerinde görünüp görünmediğini,
+Tek komutla bir videonun ya da kanalın: yapay zekâ özetlerinde görüp görünmediğini,
 4 arama motorundaki sırasını, affiliate link / disclosure / YouTube Shopping eksiklerini
 ve kaçırılan gelir fırsatlarını gösterir.
+
+**Ayrıca** anahtarsız **video üretim kiti** ile konudan bitmiş MP4 üretir
+(senaryo → stok görüntü → seslendirme → altyazı → montaj), panelden tek tuşla.
 
 > **Neden bu araç?** 2026'da YouTube trafiğinin büyük kısmı Google AI Overviews,
 > YouTube'un kendi AI özeti, Bing Copilot ve DuckDuckGo AI Chat üzerinden geliyor.
@@ -124,6 +128,54 @@ python -m tubelens video "konu" --pexels-key PTL_ANAHTAR
   (`--lang`, `--duration`, `--aspect 9:16|16:9|1:1`, `--voice`, `--clips`,
   `--no-subs`, `--bgm-volume`, `--out` …).
 
+### Örnek çıktı (gerçek üretim)
+
+```bash
+python -m tubelens video "Gülüşü güzelleştiren 3 alışkanlık" --duration 15 --resolution 720
+```
+
+```
+videos/panel-20260928-104745/
+├── video.mp4        ← 19.3 sn, 9:16 @720p, H.264 + AAC, altyazılar videoya yakılmış
+├── script.txt       ← seslendirme metni (konuşma dili)
+├── script.json      ← sahne/kare yapısı + hook + CTA
+├── audio.mp3        ← Edge TTS (tr-TR-ahmetNeural)
+├── subtitles.srt    ← kelime bazlı zamanlanmış altyazı (6 cue)
+└── meta.json        ← YouTube başlık/açıklama/etiketler + stok görüntü terimleri
+```
+
+- **Önizleme videosu (360p):** [examples/ornek-video/video-onizleme-360p.mp4](examples/ornek-video/video-onizleme-360p.mp4)
+- **Metin örnekleri:** [examples/ornek-video/](examples/ornek-video/) — `meta.json`,
+  `script.txt`, `subtitles.srt` gerçek çıktıdan alınmıştır.
+- **Panel HTTP API örneği:** [examples/video-api.sh](examples/video-api.sh)
+
+Örnek senaryo ve altyazı (üretimden, olduğu gibi):
+
+> İlk 3 saniyede gülümsemeye hazır olun! Yeni 3 alışkanlıkla yüzünüzü aydınlatın.
+>
+> 1️⃣ Güneş ışığıyla dolu bir duş alın, 2️⃣ Çiçekli minik aksesuarlar takın,
+> 3️⃣ Saçlarınızı doğal bir dokuya kavuşturun. Gülüşünüzü şimdi yükseltin!
+
+```srt
+1
+00:00:00,050 --> 00:00:02,775
+İlk 3 saniyede gülümsemeye hazır olun
+
+2
+00:00:03,650 --> 00:00:06,388
+Yeni 3 alışkanlıkla yüzünüzü aydınlatın
+```
+
+Video hattının akışı:
+
+```
+konu ─▶ llm.py (Pollinations, anahtarsız) ─▶ senaryo + YouTube SEO meta
+          ├─▶ footage.py  (Pexels / --footage-dir) ─▶ klip .mp4'ler
+          ├─▶ voice.py    (Edge TTS, anahtarsız)   ─▶ audio.mp3 + kelime zamanları
+          └─▶ assemble.py (FFmpeg: scale/crop, concat, tpad, SRT yakma, mix)
+                                    └─▶ video.mp4 + meta.json + subtitles.srt
+```
+
 ---
 
 ## Ücretsiz plan ve lisans (Freemium)
@@ -202,7 +254,7 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 | `quota.py` | Freemium kota (5 sorgu) + lisans durumu |
 | `license.py` | LemonSqueezy License API: activate / validate / deactivate, 7 gün yenileme, 30 gün tolerans |
 | `report.py` | Tek dosya HTML rapor (`reports/latest.html`) |
-| `panel.py` | Standart kütüphane HTTP paneli (harici framework yok) |
+| `panel.py` | Standart kütüphane HTTP paneli: tarama + video üretim API'si, oynatıcı/indirme (Range) |
 | `cli.py` | `scan` / `report` / `panel` / `video` / `status` / `activate` / `deactivate` / `keygen` |
 | `storage.py` | `data/store.json` kayıt deposu (tarama geçmişi) |
 | `llm.py` | Anahtarsız Pollinations LLM istemcisi + MPT tarzı senaryo üretici (JSON şema, cache-kırma retry) |
