@@ -111,9 +111,14 @@ python -m tubelens video "konu" --pexels-key PTL_ANAHTAR
 ```
 
 - **CLI:** çıktı `reports/report_*.html` dosyasına yazılır.
-- **Panel:** `http://127.0.0.1:8787` — formdan tarama başlatır, sonuçları tablo
-  olarak gösterir, son HTML raporu `/report` adresinde açılır.
-  Headless ortam için: `python -m tubelens panel --no-browser`.
+- **Panel:** `http://127.0.0.1:8787` — formdan tarama **ve video üretimi** başlatır,
+  sonuçları tablo olarak gösterir, son HTML raporu `/report` adresinde açılır.
+  Üretilen video panelde oynatılır ve `/api/video/latest` adresinden indirilir
+  (HTTP Range destekli). Headless ortam için: `python -m tubelens panel --no-browser`.
+- **Panel video API'si:** `POST /api/video` gövdesi:
+  `{topic, lang, duration, aspect, resolution, style, footage_dir, pexels_key, script_only}`;
+  ilerleme `/api/state` → `video` alanında, son üretim `/api/video/latest` + `/api/video/srt`.
+  Pexels anahtarı yoksa `footage_dir` dolu olmalı. Üretim ≈1–2 dk sürer.
 - **Video Kit:** çıktı `videos/<zaman>-<slug>/` klasörüne yazılır; en son üretim
   `videos/` altında kalır, depoya girmez. `video --help` tüm seçenekleri listeler
   (`--lang`, `--duration`, `--aspect 9:16|16:9|1:1`, `--voice`, `--clips`,
@@ -230,7 +235,8 @@ Video kiti ağ istekleri: Pollinations (senaryo), Pexels (görüntü), Microsoft
 - [ ] Rakip AI görünürlüğü karşılaştırma (aynı sorguda kim önde?)
 - [ ] Toplu CSV dışa/içe aktarma ve planlı tarama (`cron`)
 - [ ] Kanal bazlı affiliate boşluk raporu (hangi videoda hangi program eksik)
-- [ ] Video kiti: Pixabay/Coverr kaynakları, panel üzerinden video üretimi
+- [ ] Video kiti: Pixabay/Coverr kaynakları
+- [x] Panel üzerinden video üretimi (Video Üret formu + oynatıcı/indirme)
 
 ---
 

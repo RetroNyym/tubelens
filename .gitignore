@@ -19,3 +19,6 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Test ayakkabısı ayak izleri
+_test_footage/

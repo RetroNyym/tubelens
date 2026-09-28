@@ -78,6 +78,25 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
   <code>python -m tubelens activate &lt;ANAHTAR&gt;</code>
 </div>
 
+<h2>Video Üret <span class="sub">(senaryo → görüntü → ses → altyazı → MP4 · anahtarsız)</span></h2>
+<form onsubmit="return startVideo()">
+  <input id="vtopic" placeholder="Video konusu (örn. Sabah koşusunun 7 faydası)" required>
+  <select id="vaspect"><option value="9:16" selected>9:16 dikey (Shorts/TikTok)</option>
+    <option value="16:9">16:9 yatay (YouTube)</option><option value="1:1">1:1 kare</option></select>
+  <select id="vduration"><option value="30">30 sn</option><option value="45" selected>45 sn</option>
+    <option value="60">60 sn</option><option value="90">90 sn</option></select>
+  <select id="vres"><option value="1080" selected>1080p</option><option value="720">720p</option></select>
+  <select id="vlang"><option value="tr" selected>Türkçe</option><option value="en">English</option></select>
+  <input id="vstyle" placeholder="Ton (ops.) — belgesel, hızlı, eğlenceli">
+  <input id="vfootage" placeholder="Görüntü klasörü (ops.) — boşsa Pexels">
+  <input id="vpexels" placeholder="Pexels API anahtarı (ops., kaydedilir)">
+  <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:170px">
+    <input type="checkbox" id="vscript" style="min-width:0;flex:0;width:16px;height:16px"> Sadece senaryo</label>
+  <button type="submit">Video Üret</button>
+</form>
+<div class="log" id="vlog">Video üretimi bekleniyor…</div>
+<div id="vresult"></div>
+
 <h2>Özet</h2>
 <div class="cards" id="cards"></div>
 
@@ -89,6 +108,7 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
 </div>
 <script>
 let timer=null;
+let vtimer=null;
 async function startScan(){{
   const target=document.getElementById('target').value.trim();
   const keywords=document.getElementById('keywords').value.trim();
@@ -106,10 +126,60 @@ async function startScan(){{
 async function poll(){{
   const r=await fetch('/api/state'); const j=await r.json();
   document.getElementById('log').textContent=j.log||'—';
-  render(j);
+  render(j); renderVideo(j);
   if(j.busy===false && timer && j.log.indexOf('Tarama')>-1 && j.finished){{
     clearInterval(timer); timer=null;
   }}
+}}
+async function startVideo(){{
+  const topic=document.getElementById('vtopic').value.trim();
+  if(!topic) return false;
+  const payload={{topic,
+    lang:document.getElementById('vlang').value,
+    duration:parseInt(document.getElementById('vduration').value,10),
+    aspect:document.getElementById('vaspect').value,
+    resolution:parseInt(document.getElementById('vres').value,10),
+    style:document.getElementById('vstyle').value.trim(),
+    footage_dir:document.getElementById('vfootage').value.trim(),
+    pexels_key:document.getElementById('vpexels').value.trim(),
+    script_only:document.getElementById('vscript').checked}};
+  document.getElementById('vlog').textContent='Video üretimi başlatıldı…';
+  document.getElementById('vresult').innerHTML='';
+  const r=await fetch('/api/video',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify(payload)}});
+  const j=await r.json();
+  if(!j.ok){{document.getElementById('vlog').textContent='Hata: '+j.error;return false;}}
+  if(vtimer) clearInterval(vtimer);
+  vtimer=setInterval(pollVideo,1500); pollVideo();
+  return false;
+}}
+async function pollVideo(){{
+  const r=await fetch('/api/state'); const j=await r.json();
+  renderVideo(j);
+  if(j.video && j.video.busy===false && vtimer){{clearInterval(vtimer); vtimer=null;}}
+}}
+function renderVideo(j){{
+  const v=j.video||{{}};
+  const lg=document.getElementById('vlog');
+  if(lg && v.log) lg.textContent=v.log;
+  const box=document.getElementById('vresult');
+  if(!box) return;
+  const res=v.result;
+  if(!res){{box.innerHTML=''; return;}}
+  if(!res.ok){{
+    box.innerHTML='<div class="empty" style="color:var(--bad);margin-top:10px"><b>Video üretilemedi:</b> '+
+      ((res.error||'bilinmeyen hata').slice(-400))+'</div>';
+    return;
+  }}
+  const media=res.video
+    ? '<video controls width="210" src="/api/video/latest"></video>'
+    : '<span class="badge ok">senaryo hazır</span>';
+  box.innerHTML='<div class="card" style="margin-top:10px"><div class="label">Son üretim</div>'+
+    '<div style="margin-top:6px"><b>'+(res.title||'—')+'</b> <span class="sub">'+(res.duration||0)+' sn</span></div>'+
+    '<div style="margin-top:10px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'+media+
+    '<div class="sub">'+(res.video?'<a href="/api/video/latest" download="video.mp4">video.mp4 indir</a><br>':'')+
+    (res.video?'<a href="/api/video/srt" download="subtitles.srt">subtitles.srt</a><br>':'')+
+    '<code>'+res.dir+'</code></div></div></div>';
 }}
 function bar(v){{
   const c=v>=70?'var(--ok)':v>=40?'var(--warn)':'var(--bad)';
@@ -154,6 +224,9 @@ class _State:
         self.finished = False
         self.last_analyses: list[dict] = []
         self.last_ai: list[dict] = []
+        self.video_busy = False
+        self.video_log = "Video üretimi bekleniyor…"
+        self.video_result: dict | None = None
 
 
 STATE = _State()
@@ -187,6 +260,11 @@ def _state_payload() -> dict:
         "summary": shopping.channel_summary(analyses),
         "quota": quota.summary_line(),
         "licensed": quota.is_licensed(),
+        "video": {
+            "busy": STATE.video_busy,
+            "log": STATE.video_log,
+            "result": STATE.video_result,
+        },
     }
 
 
@@ -217,6 +295,78 @@ def _run_scan(target: str, keywords: str, limit: int) -> None:
         STATE.last_ai = []
 
 
+def _latest_video_path():
+    from .config import VIDEO_DIR
+
+    if not VIDEO_DIR.is_dir():
+        return None
+    clips = sorted(
+        VIDEO_DIR.glob("*/video.mp4"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
+    return clips[0] if clips else None
+
+
+def _run_video(params: dict) -> None:
+    import subprocess
+    import sys
+
+    from .config import ROOT, VIDEO_DIR
+
+    STATE.video_busy = True
+    STATE.video_result = None
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = VIDEO_DIR / f"panel-{stamp}"
+    cmd = [sys.executable, "-m", "tubelens", "video", str(params.get("topic", "")), "--out", str(out_dir)]
+    if params.get("lang"):
+        cmd += ["--lang", str(params["lang"])]
+    if params.get("duration"):
+        cmd += ["--duration", str(int(params["duration"]))]
+    if params.get("aspect"):
+        cmd += ["--aspect", str(params["aspect"])]
+    if params.get("resolution"):
+        cmd += ["--resolution", str(int(params["resolution"]))]
+    if params.get("style"):
+        cmd += ["--style", str(params["style"])]
+    if params.get("footage_dir"):
+        cmd += ["--footage-dir", str(params["footage_dir"])]
+    if params.get("pexels_key"):
+        cmd += ["--pexels-key", str(params["pexels_key"])]
+    if params.get("script_only"):
+        cmd += ["--script-only"]
+    STATE.video_log = f"Video üretimi başladı: {params.get('topic', '')}"
+    try:
+        proc = subprocess.run(
+            cmd, cwd=str(ROOT), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=1800,
+        )
+        out = (proc.stdout or "") + (proc.stderr or "")
+        STATE.video_log = out[-4000:] or "Video üretimi tamamlandı."
+        video = out_dir / "video.mp4"
+        meta: dict = {}
+        meta_path = out_dir / "meta.json"
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                meta = {}
+        STATE.video_result = {
+            "ok": proc.returncode == 0 and video.exists(),
+            "dir": str(out_dir),
+            "video": video.exists(),
+            "title": meta.get("title", ""),
+            "duration": meta.get("duration_sec", 0),
+            "error": "" if proc.returncode == 0 else (out[-600:] or "bilinmeyen hata"),
+        }
+    except subprocess.TimeoutExpired:
+        STATE.video_result = {"ok": False, "dir": str(out_dir), "video": False,
+                              "title": "", "duration": 0, "error": "Zaman aşımı (30 dk)"}
+    except Exception as exc:  # noqa: BLE001
+        STATE.video_result = {"ok": False, "dir": str(out_dir), "video": False,
+                              "title": "", "duration": 0, "error": str(exc)}
+    finally:
+        STATE.video_busy = False
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:  # suskun
         pass
@@ -242,12 +392,57 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(latest.read_bytes(), "text/html; charset=utf-8")
             else:
                 self._send(b"Rapor yok. Once scan calistirin.", code=404)
+        elif parsed.path in ("/api/video/latest", "/api/video/srt"):
+            self._send_video_file(
+                "srt" if parsed.path.endswith("/srt") else "mp4"
+            )
         else:
             self._send(b"404", code=404)
 
+    def _send_video_file(self, kind: str) -> None:
+        video = _latest_video_path()
+        if not video:
+            self._send(b"Video yok. Once video uretin.", code=404)
+            return
+        path = video if kind == "mp4" else video.with_name("subtitles.srt")
+        if not path.exists():
+            self._send(b"Dosya yok.", code=404)
+            return
+        data = path.read_bytes()
+        ctype = "video/mp4" if kind == "mp4" else "text/plain; charset=utf-8"
+        rng = self.headers.get("Range")
+        if rng and kind == "mp4" and rng.startswith("bytes="):
+            try:
+                start_s, _, end_s = rng[6:].partition("-")
+                start = int(start_s or 0)
+                end = int(end_s) if end_s else len(data) - 1
+                end = min(end, len(data) - 1)
+                if start > end or start >= len(data):
+                    raise ValueError
+            except ValueError:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{len(data)}")
+                self.end_headers()
+                return
+            chunk = data[start : end + 1]
+            self.send_response(206)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}")
+            self.send_header("Content-Length", str(len(chunk)))
+            self.end_headers()
+            self.wfile.write(chunk)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path != "/api/scan":
+        if parsed.path not in ("/api/scan", "/api/video"):
             self._send(b"404", code=404)
             return
         length = int(self.headers.get("Content-Length", 0) or 0)
@@ -256,6 +451,21 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             payload = {}
+
+        if parsed.path == "/api/video":
+            topic = str(payload.get("topic", "")).strip()
+            if not topic:
+                self._send(json.dumps({"ok": False, "error": "konu gerekli"}).encode(), "application/json")
+                return
+            if STATE.video_busy:
+                self._send(json.dumps({"ok": False, "error": "Video zaten uretiliyor"}).encode(), "application/json")
+                return
+            payload["topic"] = topic
+            thread = threading.Thread(target=_run_video, args=(payload,), daemon=True)
+            thread.start()
+            self._send(json.dumps({"ok": True}).encode(), "application/json")
+            return
+
         target = str(payload.get("target", "")).strip()
         if not target:
             self._send(json.dumps({"ok": False, "error": "target gerekli"}).encode(), "application/json")
