@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](requirements.txt)
 [![Free queries](https://img.shields.io/badge/ücretsiz%20sorgu-5-brightgreen.svg)](#ücretsiz-plan-ve-lisans)
-[![Video kit](https://img.shields.io/badge/video-MP4%20üretimi-brightgreen.svg)](#3-tubelens-video-kit---para-basan-video-hattı)
+[![Video kit](https://img.shields.io/badge/video-MP4%20üretimi-brightgreen.svg)](#3-tubelens-video-kit--para-basan-video-hattı)
 
 **YouTube AI arama görünürlüğü + affiliate gelir denetçisi.**
 Tek komutla bir videonun ya da kanalın: yapay zekâ özetlerinde görüp görünmediğini,
