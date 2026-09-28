@@ -17,8 +17,8 @@ CSS = """
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--txt);
 font:15px/1.6 "Segoe UI",Roboto,system-ui,sans-serif}
-body::after{content:"";position:fixed;right:-40px;bottom:-40px;width:560px;height:560px;
-background:url("LOGO_URI") no-repeat center/contain;opacity:.045;pointer-events:none;z-index:0}
+body::after{content:"";position:fixed;inset:0;
+background:RETRO_URI no-repeat center/contain;opacity:.06;pointer-events:none;z-index:0}
 .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px;position:relative;z-index:1}
 h1{font-size:26px;margin:0 0 6px} h2{font-size:19px;margin:34px 0 12px;
 border-bottom:1px solid var(--line);padding-bottom:8px}
@@ -159,7 +159,7 @@ def build_report(data: dict[str, Any]) -> Path:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TubeLens Rapor — {_esc(data.get("channel",""))}</title>
 <link rel="icon" href="{brand.FAVICON}">
-<style>{CSS.replace("LOGO_URI", brand.FAVICON)}</style></head><body><div class="wrap">
+<style>{CSS.replace("RETRO_URI", brand.retro_css())}</style></head><body><div class="wrap">
 
 <h1>{brand.SVG.replace('<svg ', '<svg class="brand" ')}TubeLens Analiz Raporu</h1>
 <div class="sub">Kanal: <b>{_esc(data.get("channel",""))}</b> · Üretilme: {_esc(generated)} ·

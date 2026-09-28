@@ -1,16 +1,21 @@
-"""TubeLens markasi: logo (SVG + PNG) ve urun imzasi.
+"""TubeLens markasi: logo (SVG + PNG), tam ekran watermark ve urun imzasi.
 
-SVG panel/rapor HTML'inde gomulu kullanilir; PNG video filigraani
+SVG panel/rapor HTML'inde gomlu kullanilir; PNG video filigraani
 icin Pillow ile uretilir (Pillow yoksa filigran sessizce atlanir).
+RETRO+ yazisi tam ekran arka plan watermark'i olarak kullanilir.
 """
 
 from __future__ import annotations
 
+import base64
+from functools import lru_cache
 from pathlib import Path
 
 NAME = "TubeLens"
 SIGNATURE = "TubeLens ile üretildi"
 SIGNATURE_LINE = "— TubeLens ile üretildi"
+
+_ASSETS = Path(__file__).parent / "assets"
 
 SVG = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
@@ -28,6 +33,13 @@ FAVICON = "data:image/svg+xml," + (
     SVG.replace("<", "%3C").replace(">", "%3E").replace('"', "'")
     .replace("#", "%23").replace("\n", "")
 )
+
+
+@lru_cache(maxsize=1)
+def retro_css() -> str:
+    """RETRO+ tam ekran watermark'i icin CSS url(...) degeri (gomulu PNG)."""
+    data = base64.b64encode((_ASSETS / "retro_bg.png").read_bytes()).decode("ascii")
+    return f'url("data:image/png;base64,{data}")'
 
 
 def logo_png(path: Path, size: int = 512) -> Path:

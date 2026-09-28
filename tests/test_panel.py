@@ -78,7 +78,8 @@ def test_index_has_branding(server):
     assert 'class="brand"' in text  # header logosu
     assert "<footer>" in text  # imza footer'i
     assert "vlogo" in text  # filigran checkbox
-    assert "body::after" in text  # arka plan watermark
+    assert "position:fixed;inset:0" in text  # tam ekran watermark kutusu
+    assert "data:image/png;base64,iVBOR" in text  # RETRO+ gomulu watermark
 
 
 def test_clone_requires_url(server):

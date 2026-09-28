@@ -24,6 +24,18 @@ def test_signature_line():
     assert brand.SIGNATURE_LINE not in brand.SIGNATURE_LINE * 0 + ""
 
 
+def test_retro_css_is_embedded_png():
+    css = brand.retro_css()
+    assert css.startswith('url("data:image/png;base64,')
+    import base64
+
+    raw = base64.b64decode(css.split("base64,", 1)[1].rstrip('")'))
+    assert raw[:8] == b"\x89PNG\r\n\x1a\n"
+    assert len(raw) > 1000
+    # cache: ikinci cagri ayni string
+    assert brand.retro_css() is css
+
+
 def test_logo_png(tmp_path: Path):
     try:
         out = brand.logo_png(tmp_path / "logo.png", size=128)

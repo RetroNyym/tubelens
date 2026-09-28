@@ -64,8 +64,8 @@ border-bottom:none;border-radius:10px 10px 0 0;cursor:pointer;font-weight:600;fo
 .tabpanel.on{display:block}
 .hint{font-size:13px;color:var(--mut);margin:6px 0 0}
 .brand{width:30px;height:30px;vertical-align:-7px;margin-right:10px;flex:none}
-body::after{content:"";position:fixed;right:-40px;bottom:-40px;width:560px;height:560px;
-background:url("LOGO_URI") no-repeat center/contain;opacity:.045;pointer-events:none;z-index:0}
+body::after{content:"";position:fixed;inset:0;
+background:RETRO_URI no-repeat center/contain;opacity:.07;pointer-events:none;z-index:0}
 .wrap,header{position:relative;z-index:1}
 footer{border-top:1px solid var(--line);margin-top:40px;padding:16px 24px;text-align:center;
 color:var(--mut);font-size:13px;position:relative;z-index:1}
@@ -75,7 +75,7 @@ footer b{color:var(--txt)}
 PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TubeLens Panel</title><link rel="icon" href="{brand.FAVICON}">
-<style>{CSS.replace("LOGO_URI", brand.FAVICON)}</style></head><body>
+<style>{CSS.replace("RETRO_URI", brand.retro_css())}</style></head><body>
 <header><h1>{brand.SVG.replace('<svg ', '<svg class="brand" ')}TubeLens — AI Görünürlük + Affiliate + Video Üretim Paneli</h1>
 <span class="sub"><span id="kota" class="badge acc" style="margin-right:12px">kota: …</span><a href="/report" target="_blank">Son HTML rapor</a></span></header>
 <div class="wrap">
