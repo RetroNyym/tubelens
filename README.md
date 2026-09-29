@@ -397,6 +397,24 @@ opsiyonel), Edge TTS / gTTS (ses, anahtarsız), OpenAI/ElevenLabs (ses, anahtarl
 
 ---
 
+## Güncellemeler
+
+Her önemli değişiklik push ile birlikte [CHANGELOG.md](CHANGELOG.md) dosyasına
+yazılır — yeni ne geldi, ne düzeldi oradan takip edilir.
+
+**Son güncellemeler (2026-09-29):**
+
+- ⬇️ **Çift indirme:** her üretim iki dosya — `video.mp4` (altyazılı) +
+  `video_no_subs.mp4` (altyazısız); panelde iki ayrı belirgin buton
+- 📷 **PC'den foto yükleme:** Video Üret sekmesinde "PC'den foto ekle" —
+  yüklenen fotoğraflar Ken Burns ile montaja girer, en öncelikli görüntü kaynağı
+- 🖥️ **Tek dosya masaüstü exe:** `pyinstaller tubelens.spec` → `dist/TubeLens.exe`
+- 🧠 **Pollinations LLM düzeltmesi:** reasoning `content`'i boşaltıyordu
+  (`reasoning_effort: low`) — "duz metin HTTP 200" hatası bitti
+- ✅ **Panelde üretim asla senaryoda kalmaz:** "Sadece senaryo" kutusu kaldırıldı
+
+---
+
 ## Yol haritası
 
 - [x] Ödeme entegrasyonu: LemonSqueezy License API ile uzaktan lisans doğrulama
@@ -410,7 +428,7 @@ opsiyonel), Edge TTS / gTTS (ses, anahtarsız), OpenAI/ElevenLabs (ses, anahtarl
 - [x] Panel üzerinden video üretimi (Video Üret formu + oynatıcı/indirme)
 - [x] Panel sekmeleri: Tarama & Rapor | Video Üret | Durum & Lisans (+ aktivasyon)
 - [x] TTS motorları: Edge + gTTS (anahtarsız), OpenAI + ElevenLabs (anahtarlı)
-- [x] Altyapı: pyproject kurulumu, 33 test, GitHub Actions CI
+- [x] Altyapı: pyproject kurulumu, 76 test, GitHub Actions CI
 
 ---
 
