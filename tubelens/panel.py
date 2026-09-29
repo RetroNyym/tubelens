@@ -154,6 +154,9 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
   <button type="submit">Video Üret</button>
 </form>
 <div id="uplist" class="sub" style="margin:-8px 0 12px"></div>
+<p class="hint" style="margin:-4px 0 10px">Her üretimde <b>iki dosya</b> üretilir:
+  <b>video.mp4</b> (altyazılı) + <b>video_no_subs.mp4</b> (altyazısız) —
+  üretim bitince “Son üretim” kartında iki ayrı indirme butonu belirir.</p>
 <div class="log" id="vlog">Video üretimi bekleniyor…</div>
 <div id="vresult"></div>
 </section>
@@ -320,17 +323,21 @@ function renderVideo(j){{
   const key=res.key||res.dir||'';
   if(key!==vKey){{vKey=key; vCache=Date.now();}}
   const url='/api/video/latest'+(vCache?('?t='+vCache):'');
+  const dlBlue='display:inline-block;padding:10px 16px;border-radius:8px;font-weight:700;text-decoration:none;color:#fff;background:var(--acc);margin:6px 6px 0 0';
+  const dlGreen='display:inline-block;padding:10px 16px;border-radius:8px;font-weight:700;text-decoration:none;color:#fff;background:#1f9c58;margin:6px 6px 0 0';
   const media=res.video
-    ? '<video controls preload="metadata" width="210" src="'+url+'"></video>'
+    ? '<div><video controls preload="metadata" width="210" src="'+url+'"></video>'+
+      '<div class="sub" style="margin-top:4px">Oynatıcıda ALTYAZILI kopya oynuyor</div></div>'
     : '<span class="badge ok">senaryo hazır</span>';
   box.innerHTML='<div class="card" style="margin-top:10px"><div class="label">Son üretim — '+
     (res.engine?((res.engine)+('' + (res.engine==='edge'||res.engine==='gtts'?' (anahtarsız)':' (API)'))):'')+'</div>'+
-    '<div style="margin-top:6px"><b>'+(res.title||'—')+'</b> <span class="sub">'+(res.duration||0)+' sn</span></div>'+
-    '<div style="margin-top:10px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'+media+
-    '<div class="sub">'+(res.video?'<a href="'+url+'" download="video.mp4">video.mp4 (altyazılı) indir</a><br>':'')+
-    (res.video_no_subs?'<a href="/api/video/nosubs" download="video_no_subs.mp4">video_no_subs.mp4 (altyazısız) indir</a><br>':'')+
-    (res.video?'<a href="/api/video/srt" download="subtitles.srt">subtitles.srt</a><br>':'')+
-    '<code>'+res.dir+'</code></div></div></div>';
+    '<div style="margin-top:6px"><b>'+(res.title||'—')+'</b> <span class="sub">'+(res.duration||0)+' sn</span>'+
+    (res.video&&res.video_no_subs?' <span class="badge ok">altyazılı + altyazısız hazır</span>':'')+'</div>'+
+    '<div style="margin-top:6px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'+media+
+    '<div>'+(res.video?'<a href="'+url+'" download="video.mp4" style="'+dlBlue+'">⬇ video.mp4 — ALTYAZILI</a>':'')+
+    (res.video_no_subs?'<a href="/api/video/nosubs" download="video_no_subs.mp4" style="'+dlGreen+'">⬇ video_no_subs.mp4 — ALTYAZISIZ</a>':'')+
+    (res.video?'<a href="/api/video/srt" download="subtitles.srt" style="'+dlBlue+'">subtitles.srt</a>':'')+
+    '<div style="margin-top:8px"><code>'+res.dir+'</code></div></div></div></div>';
 }}
 function bar(v){{
   const c=v>=70?'var(--ok)':v>=40?'var(--warn)':'var(--bad)';
