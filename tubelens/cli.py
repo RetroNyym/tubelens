@@ -504,6 +504,9 @@ def cmd_video(args: argparse.Namespace) -> int:
             bgm_volume=args.bgm_volume,
             work_dir=work_dir,
             logo=None if getattr(args, "no_logo", False) else brand.ensure_logo_png(),
+            no_subs_path=(
+                out_dir / "video_no_subs.mp4" if srt_text.strip() else None
+            ),
         )
     except assemble.AssemblyError as exc:
         print(f"  HATA: {exc}", file=sys.stderr)
@@ -540,6 +543,9 @@ def cmd_video(args: argparse.Namespace) -> int:
     print(f"Meta  : {out_dir / 'meta.json'} (YouTube baslik/aciklama/etiketler)")
     if not args.no_subs:
         print(f"Altyazi: {out_dir / 'subtitles.srt'}")
+        no_subs = out_dir / "video_no_subs.mp4"
+        if no_subs.exists():
+            print(f"Altyazisiz: {no_subs}")
     print("=" * 60)
     return 0
 

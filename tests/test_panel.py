@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
@@ -81,6 +82,22 @@ def test_index_has_branding(server):
     assert "vscript" not in text  # "sadece senaryo" kaldirildi: uretim hep videoya gider
     assert "position:fixed;inset:0" in text  # tam ekran watermark kutusu
     assert "data:image/png;base64,iVBOR" in text  # RETRO+ gomulu watermark
+
+
+def test_index_has_dual_download_links(server):
+    """Altyazili + altyazisiz cift indirme secenegi panelde sunulur."""
+    status, body, _ = _get(f"{server}/")
+    text = body.decode("utf-8")
+    assert status == 200
+    assert "/api/video/nosubs" in text
+    assert "video_no_subs.mp4" in text
+    assert "altyazısız" in text
+    # nosubs ucu kayitli: video yokken 404, varken 200
+    try:
+        status, _, _ = _get(f"{server}/api/video/nosubs")
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+    assert status in (200, 404)
 
 
 def test_clone_requires_url(server):

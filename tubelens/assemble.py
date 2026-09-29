@@ -269,6 +269,7 @@ def render(
     work_dir: Path | None = None,
     timeout: int = 1800,
     logo: Path | None = None,
+    no_subs_path: Path | None = None,
 ) -> tuple[Path, float]:
     """Goruntu + seslendirmeden tam video uretir; (video yolu, sure) dondurur."""
     if not clips:
@@ -308,4 +309,13 @@ def render(
     _finalize(base, silent, audio_dur, srt_path, logo=logo, logo_width=logo_width)
 
     _mux(silent, audio, out_path, bgm=bgm, bgm_volume=bgm_volume)
+
+    if no_subs_path is not None and srt_path is not None:
+        # Ayni montaj, altyazisiz ikinci surum: izleyici isterse sadece
+        # altyazisiz dosyayi indirir (srt videoya yanmadan once ayrilir).
+        no_subs_path.parent.mkdir(parents=True, exist_ok=True)
+        silent_raw = work / "silent_raw.mp4"
+        _finalize(base, silent_raw, audio_dur, None, logo=logo, logo_width=logo_width)
+        _mux(silent_raw, audio, no_subs_path, bgm=bgm, bgm_volume=bgm_volume)
+
     return out_path, media_duration(out_path)

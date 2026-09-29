@@ -314,7 +314,8 @@ function renderVideo(j){{
     (res.engine?((res.engine)+('' + (res.engine==='edge'||res.engine==='gtts'?' (anahtarsız)':' (API)'))):'')+'</div>'+
     '<div style="margin-top:6px"><b>'+(res.title||'—')+'</b> <span class="sub">'+(res.duration||0)+' sn</span></div>'+
     '<div style="margin-top:10px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'+media+
-    '<div class="sub">'+(res.video?'<a href="'+url+'" download="video.mp4">video.mp4 indir</a><br>':'')+
+    '<div class="sub">'+(res.video?'<a href="'+url+'" download="video.mp4">video.mp4 (altyazılı) indir</a><br>':'')+
+    (res.video_no_subs?'<a href="/api/video/nosubs" download="video_no_subs.mp4">video_no_subs.mp4 (altyazısız) indir</a><br>':'')+
     (res.video?'<a href="/api/video/srt" download="subtitles.srt">subtitles.srt</a><br>':'')+
     '<code>'+res.dir+'</code></div></div></div>';
 }}
@@ -660,6 +661,7 @@ def _run_video(params: dict) -> None:
             "dir": str(out_dir),
             "key": out_dir.name,
             "video": video.exists(),
+            "video_no_subs": (out_dir / "video_no_subs.mp4").exists(),
             "title": meta.get("title", ""),
             "duration": meta.get("duration_sec", 0),
             "engine": meta.get("tts_engine", engine),
@@ -701,10 +703,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(latest.read_bytes(), "text/html; charset=utf-8")
             else:
                 self._send(b"Rapor yok. Once scan calistirin.", code=404)
-        elif parsed.path in ("/api/video/latest", "/api/video/srt"):
-            self._send_video_file(
-                "srt" if parsed.path.endswith("/srt") else "mp4"
-            )
+        elif parsed.path in (
+            "/api/video/latest", "/api/video/srt", "/api/video/nosubs"
+        ):
+            kind = {
+                "/api/video/srt": "srt",
+                "/api/video/nosubs": "nosubs",
+            }.get(parsed.path, "mp4")
+            self._send_video_file(kind)
         else:
             self._send(b"404", code=404)
 
@@ -713,14 +719,20 @@ class Handler(BaseHTTPRequestHandler):
         if not video:
             self._send(b"Video yok. Once video uretin.", code=404)
             return
-        path = video if kind == "mp4" else video.with_name("subtitles.srt")
+        if kind == "nosubs":
+            path = video.with_name("video_no_subs.mp4")
+        elif kind == "srt":
+            path = video.with_name("subtitles.srt")
+        else:
+            path = video
         if not path.exists():
             self._send(b"Dosya yok.", code=404)
             return
         data = path.read_bytes()
-        ctype = "video/mp4" if kind == "mp4" else "text/plain; charset=utf-8"
+        is_media = kind in ("mp4", "nosubs")
+        ctype = "video/mp4" if is_media else "text/plain; charset=utf-8"
         rng = self.headers.get("Range")
-        if rng and kind == "mp4" and rng.startswith("bytes="):
+        if rng and is_media and rng.startswith("bytes="):
             try:
                 start_s, _, end_s = rng[6:].partition("-")
                 start = int(start_s or 0)
