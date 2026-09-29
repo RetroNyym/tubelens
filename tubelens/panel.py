@@ -6,15 +6,23 @@ Sunucu kayitli veriyi gosterir, tarama/video uretimini arka planda tetikler.
 
 from __future__ import annotations
 
+import base64
 import json
+import re
 import threading
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
 from . import brand, quota, shopping, storage
-from .config import REPORT_DIR, ensure_dirs
+from .config import REPORT_DIR, ROOT, ensure_dirs
+
+UPLOAD_DIR = ROOT / "uploads"
+UPLOAD_MAX_FILES = 40
+UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+UPLOAD_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 CSS = """
 :root{--bg:#0f1115;--card:#181b22;--line:#2a2f3a;--txt:#e6e8ee;--mut:#9aa3b2;
@@ -124,6 +132,10 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
   <select id="vlang"><option value="tr" selected>Türkçe</option><option value="en">English</option></select>
   <input id="vstyle" placeholder="Ton (ops.) — belgesel, hızlı, eğlenceli">
   <input id="vfootage" placeholder="Görüntü klasörü (ops., en öncelikli)">
+  <span class="sub" style="display:flex;gap:8px;align-items:center;min-width:230px">
+    <button type="button" id="vupbtn" style="padding:8px 14px">PC'den foto ekle</button>
+    <input type="file" id="vup" multiple accept="image/*,.jpg,.jpeg,.png,.webp" style="display:none">
+  </span>
   <input id="vpexels" placeholder="Pexels API anahtarı (ops., ücretsiz)">
   <input id="vpixabay" placeholder="Pixabay API anahtarı (ops., ücretsiz)">
   <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:250px">
@@ -141,6 +153,7 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
     <input type="checkbox" id="vlogo" checked> Videoya TubeLens filigranı + imza</label>
   <button type="submit">Video Üret</button>
 </form>
+<div id="uplist" class="sub" style="margin:-8px 0 12px"></div>
 <div class="log" id="vlog">Video üretimi bekleniyor…</div>
 <div id="vresult"></div>
 </section>
@@ -399,9 +412,56 @@ function render(j){{
     clearInterval(timer); timer=null;
   }}
 }}
+async function refreshUploads(){{
+  try{{
+    const r=await fetch('/api/uploads');
+    const j=await r.json();
+    const box=document.getElementById('uplist');
+    if(!box) return;
+    if(!j.files||!j.files.length){{box.innerHTML=''; return;}}
+    box.innerHTML='<b>Yüklenen fotoğraflar ('+j.files.length+'): </b>'+
+      j.files.map(f=>'<span style="display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:3px 8px;margin:3px 4px 0 0">'+
+        f.name+' <a href="#" onclick="delUpload(\\''+f.name+'\\');return false" title="Sil">✕</a></span>').join('');
+  }}catch(e){{}}
+}}
+async function delUpload(name){{
+  try{{
+    await fetch('/api/upload/delete',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{name:name}})}});
+    refreshUploads();
+  }}catch(e){{}}
+}}
+async function uploadPics(ev){{
+  const files=Array.from(ev.target.files||[]);
+  const box=document.getElementById('uplist');
+  if(!files.length||!box) return;
+  box.textContent='Yükleniyor ('+files.length+' dosya)…';
+  const payload={{files:[]}};
+  for(const f of files){{
+    const data=await new Promise((res,rej)=>{{
+      const rd=new FileReader();
+      rd.onload=()=>res(String(rd.result).split(',',2)[1]||'');
+      rd.onerror=rej;
+      rd.readAsDataURL(f);
+    }});
+    payload.files.push({{name:f.name,data:data}});
+  }}
+  try{{
+    const r=await fetch('/api/upload',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify(payload)}});
+    const j=await r.json();
+    if(j.ok) box.textContent='Yüklendi ('+(j.saved||0)+' fotoğraf) — üretimde kullanılacak';
+    else box.textContent='Hata: '+(j.error||(j.errors||[]).join(', ')||'yüklenemedi');
+    refreshUploads();
+  }}catch(e){{ box.textContent='Hata: '+e; }}
+  ev.target.value='';
+}}
 (function init(){{
   const h=(location.hash||'').replace('#','');
   if(h==='video'||h==='status'||h==='scan') switchTab(h);
+  document.getElementById('vupbtn').onclick=()=>document.getElementById('vup').click();
+  document.getElementById('vup').onchange=uploadPics;
+  refreshUploads();
   poll(); setInterval(poll,4000);
 }})();
 </script>
@@ -426,6 +486,13 @@ class _State:
 
 
 STATE = _State()
+
+
+def _safe_upload_name(name: str) -> str:
+    """Yukleme dosya adini guvenli hale getirir (path traversal imkansiz)."""
+    name = Path(name.replace("\\", "/")).name
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name).lstrip(".")
+    return name[:80]
 
 
 def _video_row(record: dict) -> dict:
@@ -603,6 +670,12 @@ def _run_video(params: dict) -> None:
                 pass
     else:
         cmd = _cli_cmd("video", str(params.get("topic", "")), "--out", str(out_dir))
+    # Kullanici elle "goruntu klasoru" yazmadiysa ve PC'den yukleme varsa
+    # yuklenen fotograflar montaja girer (en oncelikli kaynak).
+    if not params.get("footage_dir") and UPLOAD_DIR.is_dir() and any(
+        p.is_file() for p in UPLOAD_DIR.glob("*")
+    ):
+        params = {**params, "footage_dir": str(UPLOAD_DIR)}
     opt_map = {
         "lang": "--lang",
         "aspect": "--aspect",
@@ -635,6 +708,8 @@ def _run_video(params: dict) -> None:
         mode = "SADECE SENARYO (istek uzerinden)"
     elif str(params.get("script_file") or "") == "clone_draft.json":
         mode = "klon draft -> tum adimlar"
+    if params.get("footage_dir"):
+        mode += " · goruntu klasoru kullaniliyor"
     STATE.video_log = (
         f"Video üretimi başladı: {params.get('topic', '')} "
         f"(motor={engine} · {mode})"
@@ -703,6 +778,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(latest.read_bytes(), "text/html; charset=utf-8")
             else:
                 self._send(b"Rapor yok. Once scan calistirin.", code=404)
+        elif parsed.path == "/api/uploads":
+            files = []
+            if UPLOAD_DIR.is_dir():
+                for p in sorted(UPLOAD_DIR.glob("*")):
+                    if p.is_file() and p.suffix.lower() in UPLOAD_EXTS:
+                        files.append(
+                            {"name": p.name, "bytes": p.stat().st_size}
+                        )
+            self._send(json.dumps({"files": files}).encode(), "application/json")
         elif parsed.path in (
             "/api/video/latest", "/api/video/srt", "/api/video/nosubs"
         ):
@@ -713,6 +797,56 @@ class Handler(BaseHTTPRequestHandler):
             self._send_video_file(kind)
         else:
             self._send(b"404", code=404)
+
+    def _handle_upload(self, payload: dict) -> None:
+        files = payload.get("files")
+        if not isinstance(files, list):
+            files = []
+        try:
+            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self._send(
+                json.dumps({"ok": False, "error": f"klasor olusturulamadi: {exc}"}).encode(),
+                "application/json",
+            )
+            return
+        existing = sum(
+            1 for p in UPLOAD_DIR.glob("*")
+            if p.is_file() and p.suffix.lower() in UPLOAD_EXTS
+        )
+        saved = 0
+        errors: list[str] = []
+        for item in files:
+            if not isinstance(item, dict):
+                continue
+            if existing + saved >= UPLOAD_MAX_FILES:
+                errors.append(f"dosya limiti doldu ({UPLOAD_MAX_FILES})")
+                break
+            raw_name = str(item.get("name") or "")
+            name = _safe_upload_name(raw_name)
+            if not name or Path(name).suffix.lower() not in UPLOAD_EXTS:
+                errors.append(f"uzanti desteklenmiyor: {raw_name or '?'}")
+                continue
+            try:
+                blob = base64.b64decode(str(item.get("data") or ""), validate=True)
+            except Exception:  # noqa: BLE001
+                errors.append(f"{name}: gecersiz veri")
+                continue
+            if len(blob) < 10 or len(blob) > UPLOAD_MAX_BYTES:
+                errors.append(f"{name}: boyut gecersiz")
+                continue
+            try:
+                (UPLOAD_DIR / name).write_bytes(blob)
+            except OSError as exc:
+                errors.append(f"{name}: {exc}")
+                continue
+            saved += 1
+        self._send(
+            json.dumps(
+                {"ok": saved > 0, "saved": saved, "errors": errors[:6]}
+            ).encode(),
+            "application/json",
+        )
 
     def _send_video_file(self, kind: str) -> None:
         video = _latest_video_path()
@@ -765,15 +899,44 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path not in ("/api/scan", "/api/video", "/api/activate", "/api/clone"):
+        if parsed.path not in (
+            "/api/scan", "/api/video", "/api/activate", "/api/clone",
+            "/api/upload", "/api/upload/delete",
+        ):
             self._send(b"404", code=404)
             return
         length = int(self.headers.get("Content-Length", 0) or 0)
+        if length > 64 * 1024 * 1024:
+            self._send(
+                json.dumps({"ok": False, "error": "istek cok buyuk"}).encode(),
+                "application/json",
+            )
+            return
         raw = self.rfile.read(length) if length else b"{}"
         try:
             payload = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             payload = {}
+
+        if parsed.path == "/api/upload":
+            self._handle_upload(payload)
+            return
+
+        if parsed.path == "/api/upload/delete":
+            name = _safe_upload_name(str(payload.get("name", "")))
+            ok = False
+            if name:
+                target = UPLOAD_DIR / name
+                if target.is_file() and target.suffix.lower() in UPLOAD_EXTS:
+                    try:
+                        target.unlink()
+                        ok = True
+                    except OSError:
+                        pass
+            self._send(
+                json.dumps({"ok": ok}).encode(), "application/json"
+            )
+            return
 
         if parsed.path == "/api/clone":
             url = str(payload.get("url", "")).strip()

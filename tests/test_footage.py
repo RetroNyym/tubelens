@@ -52,3 +52,24 @@ def test_gather_no_keys_no_ai_fails_cleanly(tmp_path):
         )
     message = str(exc.value)
     assert "Pexels" in message and "Pixabay" in message
+
+
+def test_from_local_photos_become_clips(tmp_path):
+    """Fotograflar kabul edilir; Ken Burns ile klip'e cevrilir (anahtarsiz)."""
+    import os
+
+    from PIL import Image
+
+    img = tmp_path / "urun.jpg"
+    # gurultulu goruntu: x264 kucultemez, klip >10KB olur
+    Image.frombytes("RGB", (300, 400), os.urandom(300 * 400 * 3)).save(img, "JPEG")
+    clips = footage.from_local(tmp_path, 1, dest_dir=tmp_path / "cl", aspect="9:16")
+    assert len(clips) == 1
+    assert clips[0].suffix == ".mp4"
+    assert clips[0].stat().st_size > 10_000
+
+
+def test_from_local_rejects_empty_folder(tmp_path):
+    with pytest.raises(footage.FootageError) as exc:
+        footage.from_local(tmp_path, 2)
+    assert "video/fotograf" in str(exc.value)

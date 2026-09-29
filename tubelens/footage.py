@@ -19,6 +19,7 @@ PEXELS_SEARCH_URL = "https://api.pexels.com/videos/search"
 PIXABAY_SEARCH_URL = "https://pixabay.com/api/videos/"
 POLLINATIONS_IMAGE_URL = "https://image.pollinations.ai/prompt/"
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 _last_call = 0.0
 
@@ -55,18 +56,54 @@ def _download(url: str, dest: Path) -> Path:
     return dest
 
 
-def from_local(folder: Path, count: int) -> list[Path]:
-    """Lokal klasordeki videolari rastgele sectirir."""
+def from_local(
+    folder: Path,
+    count: int,
+    *,
+    dest_dir: Path | None = None,
+    aspect: str = "9:16",
+) -> list[Path]:
+    """Lokal klasordeki videolari ve fotograflari sectirir.
+
+    Fotograflar Ken Burns (yavas zoom) ile klip'e cevrilir; boylece kullanicinin
+    PC'den yukledigi tek kareler de montaja girer.
+    """
     if not folder.is_dir():
         raise FootageError(f"Goruntu klasoru bulunamadi: {folder}")
-    pool = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTS)
-    if not pool:
-        raise FootageError(f"{folder} icinde desteklenen video dosyasi yok")
-    random.shuffle(pool)
+    files = sorted(p for p in folder.iterdir() if p.is_file())
+    videos = [p for p in files if p.suffix.lower() in VIDEO_EXTS]
+    imgs = [p for p in files if p.suffix.lower() in IMG_EXTS]
+    if not videos and not imgs:
+        raise FootageError(
+            f"{folder} icinde desteklenen video/fotograf dosyasi yok"
+        )
+    random.shuffle(videos)
+    random.shuffle(imgs)
+    # videolar + fotograflar arasindan count adet sec (eksikse donguyle tamamla)
+    pool = videos + imgs
     picked = pool[:count]
     while len(picked) < count and len(pool) > 1:
         picked.extend(pool[: count - len(picked)])
-    return picked
+    # secilen fotograflari klip'e cevir; hatalilari atla
+    clips: list[Path] = []
+    clip_dir = dest_dir or (folder / "clips")
+    for src in picked:
+        if src.suffix.lower() in VIDEO_EXTS:
+            clips.append(src)
+            continue
+        # ayni fotografin klip'i daha once uretildiyse tekrar kullan (hizli)
+        dest = clip_dir / f"local_{src.stem}.mp4"
+        if dest.exists() and dest.stat().st_size > 10_000:
+            clips.append(dest)
+            continue
+        try:
+            clip_dir.mkdir(parents=True, exist_ok=True)
+            clips.append(_still_to_clip(src, dest, _ai_image_size(aspect)))
+        except FootageError:
+            continue
+    if not clips:
+        raise FootageError(f"{folder}: hicbir dosya klip'e cevrilemedi")
+    return clips
 
 
 def _pick_file(files: list[dict], aspect: str) -> str | None:
@@ -349,7 +386,7 @@ def gather(
 ) -> list[Path]:
     """Kaynak zinciri: lokal -> Pexels -> Pixabay -> AI gorsel (asla bos kalmaz)."""
     if footage_dir:
-        return from_local(Path(footage_dir), count)
+        return from_local(Path(footage_dir), count, dest_dir=dest_dir, aspect=aspect)
 
     problems: list[str] = []
     if pexels_key:

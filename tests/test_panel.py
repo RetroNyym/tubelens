@@ -144,3 +144,33 @@ def test_unknown_route_404(server):
     with pytest.raises(urllib.error.HTTPError) as exc:
         _get(f"{server}/yok")
     assert exc.value.code == 404
+
+def test_upload_flow(server, tmp_path, monkeypatch):
+    """PC'den foto yukleme: alani, liste + yukleme + silme uclari."""
+    monkeypatch.setattr(panel, "UPLOAD_DIR", tmp_path)
+    status, body, _ = _get(f"{server}/")
+    text = body.decode("utf-8")
+    assert status == 200
+    assert "vupbtn" in text and "/api/upload" in text
+    data = json.loads(_get(f"{server}/api/uploads")[1])
+    assert data["files"] == []
+    import base64
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), (255, 0, 0)).save(buf, "PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    body = _post(f"{server}/api/upload", {"files": [{"name": "foto_test.png", "data": b64}]})
+    assert body["ok"] is True and body["saved"] == 1
+    data = json.loads(_get(f"{server}/api/uploads")[1])
+    assert data["files"] and data["files"][0]["name"] == "foto_test.png"
+    assert (tmp_path / "foto_test.png").is_file()
+    body = _post(f"{server}/api/upload/delete", {"name": "foto_test.png"})
+    assert body["ok"] is True
+    data = json.loads(_get(f"{server}/api/uploads")[1])
+    assert data["files"] == []
+    # path traversal denemesi engellenir
+    body = _post(f"{server}/api/upload/delete", {"name": "../meta.json"})
+    assert body["ok"] is False
