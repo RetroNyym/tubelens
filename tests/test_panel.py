@@ -78,6 +78,7 @@ def test_index_has_branding(server):
     assert 'class="brand"' in text  # header logosu
     assert "<footer>" in text  # imza footer'i
     assert "vlogo" in text  # filigran checkbox
+    assert "vscript" not in text  # "sadece senaryo" kaldirildi: uretim hep videoya gider
     assert "position:fixed;inset:0" in text  # tam ekran watermark kutusu
     assert "data:image/png;base64,iVBOR" in text  # RETRO+ gomulu watermark
 

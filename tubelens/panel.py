@@ -137,8 +137,6 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
   <input id="vvoice" placeholder="Ses adı (ops.) — Edge: tr-TR-EmelNeural · OpenAI: alloy">
   <input id="vopenai" placeholder="OpenAI API anahtarı (ops., kaydedilir)">
   <input id="veleven" placeholder="ElevenLabs API anahtarı (ops., kaydedilir)">
-  <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:170px">
-    <input type="checkbox" id="vscript"> Sadece senaryo</label>
   <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:230px">
     <input type="checkbox" id="vlogo" checked> Videoya TubeLens filigranı + imza</label>
   <button type="submit">Video Üret</button>
@@ -224,7 +222,6 @@ function renderClone(j){{
     }}
     dur.value=dv;
     document.getElementById('vstyle').value='';
-    document.getElementById('vscript').checked=false;
   }}
   const words=(d.script.script||'').split(/\\s+/).length;
   card.innerHTML='<div class="card" style="border-left:3px solid var(--ok);margin-bottom:12px">'+
@@ -265,7 +262,6 @@ async function startVideo(){{
     voice:document.getElementById('vvoice').value.trim(),
     openai_key:document.getElementById('vopenai').value.trim(),
     elevenlabs_key:document.getElementById('veleven').value.trim(),
-    script_only:document.getElementById('vscript').checked,
     logo:document.getElementById('vlogo').checked,
     script_file:cloneApplied?'clone_draft.json':''}};
   document.getElementById('vlog').textContent='Video üretimi başlatıldı…';
@@ -633,7 +629,15 @@ def _run_video(params: dict) -> None:
     if params.get("logo") is False:
         cmd += ["--no-logo"]
     engine = str(params.get("tts_engine") or "edge")
-    STATE.video_log = f"Video üretimi başladı: {params.get('topic', '')} (motor={engine})"
+    mode = "senaryo+video (tum adimlar)"
+    if params.get("script_only"):
+        mode = "SADECE SENARYO (istek uzerinden)"
+    elif str(params.get("script_file") or "") == "clone_draft.json":
+        mode = "klon draft -> tum adimlar"
+    STATE.video_log = (
+        f"Video üretimi başladı: {params.get('topic', '')} "
+        f"(motor={engine} · {mode})"
+    )
     try:
         proc = subprocess.run(
             cmd, cwd=str(ROOT), capture_output=True, text=True,
@@ -650,7 +654,9 @@ def _run_video(params: dict) -> None:
             except (json.JSONDecodeError, OSError):
                 meta = {}
         STATE.video_result = {
-            "ok": proc.returncode == 0 and (video.exists() or meta.get("title")),
+            "ok": bool(
+                proc.returncode == 0 and (video.exists() or bool(meta.get("title")))
+            ),
             "dir": str(out_dir),
             "key": out_dir.name,
             "video": video.exists(),
