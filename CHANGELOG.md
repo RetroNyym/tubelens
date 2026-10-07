@@ -3,6 +3,41 @@
 TubeLens depoya itilen her önemli değişikliğin kaydı. Yeni bir değişiklik
 her push ile buraya eklenir. Biçim: [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/).
 
+## [Unreleased] — 2026-10-07
+
+### Eklendi
+- **Web görsel araması (anahtarsız):** yeni `webimg.py` — Bing → Openverse →
+  Wikimedia Commons sayfa aramasıyla konuya alakalı gerçek fotoğraf indirir
+  (anahtar gerekmez). Kaynak zincirine 4. kademe olarak girdi
+  (`footage.from_web_images`, `gather(allow_web=…)`); kapatmak için CLI
+  `--no-web-images`, panelde "Web görsel araması" onay kutusu (varsayılan açık).
+  Test: `tests/test_webimg.py`.
+- **LTX AI video (opsiyonel):** yeni `hfspace.py` — Hugging Face Spaces
+  `Lightricks/ltx-video-distilled` ile metinden gerçek video klibi
+  (`footage.from_ltx_video`, `gather(allow_ltx=…)`); CLI `--ltx-video`,
+  panelde "AI video LTX" onay kutusu (varsayılan kapalı). Anonim kota dolduğunda
+  `HfSpaceError` fırlatılır ve zincir sessizce sonraki kaynağa düşer.
+  `--hf-token` / panel "Hugging Face token" alanı token'ı `vconf`'a kaydeder
+  (kota genişletir + HF router LLM).
+- **HF router LLM (opsiyonel):** `llm.py`'ye `HF_ROUTER`/`HF_MODEL`
+  (`openai/gpt-oss-120b`) — `--hf-token` varsa senaryo üretimi (script/clone)
+  ücretsiz HF kredisiyle (`$0.10/ay`) Pollinations yerine çalışır.
+- **Panel Video Üret formu alanları:** `vwebimg` / `vltx` / `vhf` —
+  `POST /api/video` gövdesine `web_images`, `ltx_video`, `hf_token`;
+  `startVideo` + `opt_map` + `--no-web-images`/`--ltx-video` bayrakları.
+- **Panelde URL ile sekme açma:** `initTab()` + `load` → `location.hash`
+  (`#video` → Video Üret, `#durum` → Durum & Lisans) — ekran görüntüsü /
+  derin bağlantı desteği.
+- **README ekran görüntüleri:** üç sekmenin gerçek panelden görselleri
+  `docs/screenshots/panel-tarama.png`, `panel-video-uret.png`, `panel-durum.png`
+  + "Ekran Görüntüleri" bölümü.
+
+### Değiştirildi
+- Kaynak zinciri tablosu 4 → 6 kademe (web görsel araması + LTX eklendi);
+  `footage.gather` imzası `allow_web=True, allow_ltx=False, hf_token=""` aldı.
+- Testler `allow_web=False` ile ağdan bağımsızlaştırıldı
+  (`tests/test_footage.py`); suite 79/79 geçiyor.
+
 ## [Unreleased] — 2026-09-29
 
 ### Eklendi

@@ -12,12 +12,31 @@ Tek komutla bir videonun ya da kanalın: yapay zekâ özetlerinde görüp görü
 ve kaçırılan gelir fırsatlarını gösterir.
 
 **Ayrıca** anahtarsız **video üretim kiti** ile konudan bitmiş MP4 üretir
-(senaryo → stok görüntü → seslendirme → altyazı → montaj), panelden tek tuşla.
+(senaryo → görüntü [stok + **web görsel araması** + ops. AI video] → seslendirme
+→ altyazı → montaj), panelden tek tuşla.
 
 > **Neden bu araç?** 2026'da YouTube trafiğinin büyük kısmı Google AI Overviews,
 > YouTube'un kendi AI özeti, Bing Copilot ve DuckDuckGo AI Chat üzerinden geliyor.
 > "Video kaçırıyor mu?" sorusuna yanıt veren, bunu API anahtarı olmadan yapan ve
 > affiliate tarafını da kontrol eden bir araç pazarda neredeyse yok.
+
+---
+
+## Ekran Görüntüleri
+
+**1 · Tarama & Rapor** — AI görünürlük tablosu, $ kaçak özeti, `▶ Klonla` / `Düzelt ▾` aksiyonları:
+
+![TubeLens — Tarama & Rapor sekmesi](docs/screenshots/panel-tarama.png)
+
+**2 · Video Üret** — kaynak/ses motoru seçimli üretim formu (web görsel araması + LTX anahtarsız),
+üretim logu ve `video.mp4` (altyazılı) + `video_no_subs.mp4` (altyazısız) + `subtitles.srt`
+indirme butonlarıyla "Son üretim" kartı:
+
+![TubeLens — Video Üret sekmesi](docs/screenshots/panel-video-uret.png)
+
+**3 · Durum & Lisans** — kota, lisans aktivasyonu ve CLI komut referansı:
+
+![TubeLens — Durum & Lisans sekmesi](docs/screenshots/panel-durum.png)
 
 ---
 
@@ -55,14 +74,19 @@ MoneyPrinterTurbo tarzı, **kendi kitimiz** olarak doğrudan CLI'ye gömülü ta
 üretim hattı. Tek komutla konudan bitmiş MP4'e:
 
 - **Senaryo** → anahtarsız Pollinations LLM (hook, anlatım, SEO başlık/açıklama/etiket + İngilizce stok görüntü kelimeleri)
-- **Görüntü** → dört kademeli kaynak zinciri (ilk elenen geçer, **hiçbirinde anahtar yoksa bile üretilir**):
+- **Görüntü** → altı kademeli kaynak zinciri (ilk elenen geçer, **hiçbirinde anahtar yoksa bile üretilir**):
 
   | Sıra | Kaynak | Anahtar |
   |---|---|---|
   | 1 | `--footage-dir` kendi görüntüleriniz | gerekmez |
   | 2 | Pexels API | ücretsiz |
   | 3 | Pixabay API | ücretsiz |
-  | 4 | **Pollinations AI görsel + Ken Burns** (anahtarsız) | **yok** |
+  | 4 | **Web görsel araması** — Bing/Openverse/Wikimedia'dan alakalı gerçek fotoğraf (`--no-web-images` ile kapatılır) | **yok** |
+  | 5 | **AI video LTX** — metinden gerçek video klibi (`--ltx-video`, Hugging Face Spaces; `--hf-token` ile kota genişler) | ops. (HF token) |
+  | 6 | **Pollinations AI görsel + Ken Burns** (anahtarsız) | **yok** |
+
+  Panelde Video Üret sekmesinde de **"Web görsel araması"** ve **"AI video LTX"**
+  onay kutuları + "Hugging Face token" alanı vardır.
 
 - **Seslendirme** → 4 motor (`--tts-engine`):
 
@@ -84,8 +108,9 @@ MoneyPrinterTurbo tarzı, **kendi kitimiz** olarak doğrudan CLI'ye gömülü ta
 > (`--no-logo` ile kapatılır; panelde Video Üret sekmesindeki onay kutusu).
 
 > **Ücretsiz ve anahtarsız:** senaryo + TTS (edge/gtts) + altyazı + montaj + AI görsel
-> tamamen anahtarsız çalışır. Pexels/Pixabay anahtarları isteğe bağlı hız/kalite artışıdır;
-> OpenAI/ElevenLabs yalnızca daha iyi ses isteyenler içindir.
+> + **web görsel araması** tamamen anahtarsız çalışır. Pexels/Pixabay anahtarları
+> isteğe bağlı hız/kalite artışıdır; LTX AI video da anahtarsız çalışır (HF token
+> ile kota genişler); OpenAI/ElevenLabs yalnızca daha iyi ses isteyenler içindir.
 
 ### 4) Kazananı Klonla — Tarama → Üretim hattı (rakiplerde yok)
 
@@ -199,6 +224,12 @@ python -m tubelens video "Kahve demleme" --aspect 16:9 --resolution 720 \
 
 # Pexels/Pixabay anahtarını bir kez kaydet (ücretsiz: pexels.com/api · pixabay.com/api/docs)
 python -m tubelens video "konu" --pexels-key PTL_ANAHTAR --pixabay-key PBX_ANAHTAR
+
+# Web görsel araması + LTX AI video (anahtarsız; HF token kota açar)
+python -m tubelens video "Vahşi doğada çadır kurmak" --ltx-video --hf-token HF_TOKEN
+
+# Web görsel aramasını kapat, sadece lokal + Pexels/Pixabay + AI görsel zinciri
+python -m tubelens video "konu" --no-web-images
 ```
 
 - **CLI:** çıktı `reports/report_*.html` dosyasına yazılır.
@@ -212,14 +243,16 @@ python -m tubelens video "konu" --pexels-key PTL_ANAHTAR --pixabay-key PBX_ANAHT
   Headless ortam için: `python -m tubelens panel --no-browser`.
 - **Panel video API'si:** `POST /api/video` gövdesi:
   `{topic, lang, duration, aspect, resolution, style, footage_dir, pexels_key, pixabay_key,
-  ai_visuals, tts_engine, voice, openai_key, elevenlabs_key, script_only, script_file}`;
+  ai_visuals, web_images, ltx_video, hf_token, tts_engine, voice, openai_key, elevenlabs_key,
+  script_only, script_file}`;
   ilerleme `/api/state` → `video` alanında, son üretim `/api/video/latest` + `/api/video/srt`;
   klon: `POST /api/clone` `{url}` → `state.clone.draft`;
   lisans: `POST /api/activate` `{key}`. Üretim ≈1–3 dk sürer.
 - **Video Kit:** çıktı `videos/<zaman>-<slug>/` klasörüne yazılır; en son üretim
   `videos/` altında kalır, depoya girmez. `video --help` tüm seçenekleri listeler
   (`--lang`, `--duration`, `--aspect 9:16|16:9|1:1`, `--voice`, `--clips`,
-  `--no-subs`, `--bgm-volume`, `--out` …).
+  `--no-subs`, `--no-web-images`, `--ltx-video`, `--hf-token`,
+  `--bgm-volume`, `--out` …).
 
 ### Örnek çıktı (gerçek üretim)
 
@@ -262,11 +295,12 @@ Yeni 3 alışkanlıkla yüzünüzü aydınlatın
 Video hattının akışı:
 
 ```
-konu ─▶ llm.py (Pollinations, anahtarsız) ─▶ senaryo + YouTube SEO meta
-          ├─▶ footage.py  (Pexels / --footage-dir) ─▶ klip .mp4'ler
+konu ─▶ llm.py (Pollinations, anahtarsız · ops. HF router) ─▶ senaryo + YouTube SEO meta
+          ├─▶ footage.py  (lokal → Pexels → Pixabay → web görsel araması
+          │                → [LTX AI video] → AI görsel + Ken Burns) ─▶ klip .mp4'ler
           ├─▶ voice.py    (Edge TTS, anahtarsız)   ─▶ audio.mp3 + kelime zamanları
           └─▶ assemble.py (FFmpeg: scale/crop, concat, tpad, SRT yakma, mix)
-                                    └─▶ video.mp4 + meta.json + subtitles.srt
+                                    └─▶ video.mp4 + video_no_subs.mp4 + meta.json + subtitles.srt
 ```
 
 ---
@@ -372,17 +406,21 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 | `panel.py` | Sekmeli HTTP paneli: tarama + video üretim API'si + lisans aktivasyon, oynatıcı/indirme (Range) |
 | `cli.py` | `scan` / `report` / `panel` / `video` / `status` / `activate` / `deactivate` / `keygen` (`--version`) |
 | `storage.py` | `data/store.json` kayıt deposu (tarama geçmişi) |
-| `llm.py` | Anahtarsız Pollinations LLM istemcisi + MPT tarzı senaryo üretici (JSON şema, cache-kırma retry) |
-| `footage.py` | Görüntü kaynak zinciri: lokal → Pexels → Pixabay → **Pollinations AI görsel + Ken Burns (anahtarsız)** |
+| `llm.py` | Anahtarsız Pollinations LLM istemcisi + MPT tarzı senaryo üretici (JSON şema, cache-kırma retry) · ops. **HF router** (`openai/gpt-oss-120b`, `--hf-token`) |
+| `footage.py` | Görüntü kaynak zinciri: lokal → Pexels → Pixabay → **web görsel araması (anahtarsız)** → **LTX AI video (ops.)** → **Pollinations AI görsel + Ken Burns (anahtarsız)** |
+| `webimg.py` | Anahtarsız web görsel araması: Bing → Openverse → Wikimedia Commons (sayfa araması, anahtar gerekmez) |
+| `hfspace.py` | Hugging Face Spaces istemcisi: LTX metinden video + oturum/alan yönetimi (`hfspace.HfSpaceError` fırlatır, zincir sessizce düşer) |
 | `voice.py` | 4 TTS motoru: Edge / gTTS (anahtarsız), OpenAI / ElevenLabs (anahtarlı) + kelime zamanlamaları |
 | `assemble.py` | FFmpeg montaj: scale/crop, concat, tpad, SRT yakma, ses mix |
 
 Kurulum/test altyapısı: `pyproject.toml` (`pip install -e .` → `tubelens` komutu),
-`tests/` (33 birim/smoke test, tamamı offline), GitHub Actions CI (Ubuntu + Windows).
+`tests/` (79 birim/smoke test, tamamı offline), GitHub Actions CI (Ubuntu + Windows).
 
 İstekler kibar gecikmeli (`POLITE_DELAY = 0.8s`), tek bir User-Agent ile atılır.
 Video kiti ağ istekleri: Pollinations (senaryo + AI görsel), Pexels/Pixabay (stok,
-opsiyonel), Edge TTS / gTTS (ses, anahtarsız), OpenAI/ElevenLabs (ses, anahtarlı).
+opsiyonel), **Bing/Openverse/Wikimedia (web görsel araması, anahtarsız)**,
+**Hugging Face Spaces (LTX AI video, ops.)**, **HF router (senaryo, ops.)**,
+Edge TTS / gTTS (ses, anahtarsız), OpenAI/ElevenLabs (ses, anahtarlı).
 
 ---
 
@@ -402,7 +440,20 @@ opsiyonel), Edge TTS / gTTS (ses, anahtarsız), OpenAI/ElevenLabs (ses, anahtarl
 Her önemli değişiklik push ile birlikte [CHANGELOG.md](CHANGELOG.md) dosyasına
 yazılır — yeni ne geldi, ne düzeldi oradan takip edilir.
 
-**Son güncellemeler (2026-09-29):**
+**Son güncellemeler (2026-10-07):**
+
+- 🌐 **Web görsel araması (anahtarsız):** kaynak zincirine 4. kademe —
+  Bing/Openverse/Wikimedia'dan konuya alakalı gerçek fotoğraf (`--no-web-images`
+  ile kapatılır, panelde onay kutusu)
+- 🎬 **LTX AI video (opsiyonel):** metinden gerçek video klibi — Hugging Face
+  Spaces (`--ltx-video`, panelde "AI video LTX"); `--hf-token` ile ücretsiz
+  kota genişler; kota dolduğunda zincir sessizce sonrakine düşer
+- 🧠 **HF router LLM (opsiyonel):** `openai/gpt-oss-120b` ile senaryo üretimi
+  (`--hf-token`, ücretsiz $0.10/ay kredi)
+- 📷 **Ekran görüntüleri:** README'ye üç sekmenin gerçek panelden görselleri
+  (`docs/screenshots/`)
+
+**Önceki (2026-09-29):**
 
 - ⬇️ **Çift indirme:** her üretim iki dosya — `video.mp4` (altyazılı) +
   `video_no_subs.mp4` (altyazısız); panelde iki ayrı belirgin buton
@@ -425,10 +476,13 @@ yazılır — yeni ne geldi, ne düzeldi oradan takip edilir.
 - [ ] Toplu CSV dışa/içe aktarma ve planlı tarama (`cron`)
 - [ ] Kanal bazlı affiliate boşluk raporu (hangi videoda hangi program eksik)
 - [x] Görüntü: Pixabay + anahtarsız AI görsel/Ken Burns kaynak zinciri
+- [x] Görüntü: **web görsel araması** (Bing/Openverse/Wikimedia, anahtarsız)
+- [x] **LTX AI video** (metinden klip, HF Spaces) + HF token'lı kota
+- [x] HF router ile ops. senaryo LLM (`openai/gpt-oss-120b`)
 - [x] Panel üzerinden video üretimi (Video Üret formu + oynatıcı/indirme)
 - [x] Panel sekmeleri: Tarama & Rapor | Video Üret | Durum & Lisans (+ aktivasyon)
 - [x] TTS motorları: Edge + gTTS (anahtarsız), OpenAI + ElevenLabs (anahtarlı)
-- [x] Altyapı: pyproject kurulumu, 76 test, GitHub Actions CI
+- [x] Altyapı: pyproject kurulumu, 79 test, GitHub Actions CI
 
 ---
 
