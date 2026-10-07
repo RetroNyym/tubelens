@@ -119,8 +119,9 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
 
 <section id="tab-video" class="tabpanel">
 <h2>Video Üret <span class="sub">senaryo → görüntü → ses → altyazı → MP4</span></h2>
-<p class="hint">Kaynak zinciri: lokal klasör → Pexels → Pixabay → <b>anahtarsız AI görsel + Ken Burns</b>
-(son adım hiç anahtar istemez). Ses: Edge TTS / gTTS anahtarsız; OpenAI / ElevenLabs API anahtarlı.</p>
+<p class="hint">Kaynak zinciri: lokal klasör → Pexels → Pixabay → <b>web görsel araması (anahtarsız)</b> →
+AI video LTX (opsiyonel) → <b>anahtarsız AI görsel + Ken Burns</b>. Web araması Bing/Openverse/Wikimedia'dan
+sorguyla alakalı gerçek fotoğraf bulur. Ses: Edge TTS / gTTS anahtarsız; OpenAI / ElevenLabs API anahtarlı.</p>
 <div id="clonecard"></div>
 <form onsubmit="return startVideo()">
   <input id="vtopic" placeholder="Video konusu (örn. Sabah koşusunun 7 faydası)" required style="min-width:100%">
@@ -140,6 +141,11 @@ PAGE = f"""<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8">
   <input id="vpixabay" placeholder="Pixabay API anahtarı (ops., ücretsiz)">
   <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:250px">
     <input type="checkbox" id="vai" checked> AI görsel fallback (anahtarsız)</label>
+  <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:250px">
+    <input type="checkbox" id="vwebimg" checked> Web görsel araması — alakalı fotoğraf (anahtarsız)</label>
+  <label class="sub" style="display:flex;gap:7px;align-items:center;min-width:250px">
+    <input type="checkbox" id="vltx"> AI video LTX — metinden gerçek video (anahtarsız, yavaş)</label>
+  <input id="vhf" placeholder="Hugging Face token (ops., ücretsiz — senaryo + LTX kotası)">
   <select id="vtts">
     <option value="edge" selected>Edge TTS — anahtarsız (öneri)</option>
     <option value="gtts">Google gTTS — anahtarsız</option>
@@ -193,6 +199,11 @@ function switchTab(name){{
   }});
   history.replaceState(null,'','#'+name);
 }}
+function initTab(){{
+  const h=(location.hash||'').replace('#','');
+  if(h && document.getElementById('tab-'+h)) switchTab(h);
+}}
+window.addEventListener('load', initTab);
 async function startScan(){{
   const target=document.getElementById('target').value.trim();
   const keywords=document.getElementById('keywords').value.trim();
@@ -274,6 +285,9 @@ async function startVideo(){{
     pexels_key:document.getElementById('vpexels').value.trim(),
     pixabay_key:document.getElementById('vpixabay').value.trim(),
     ai_visuals:document.getElementById('vai').checked,
+    web_images:document.getElementById('vwebimg').checked,
+    ltx_video:document.getElementById('vltx').checked,
+    hf_token:document.getElementById('vhf').value.trim(),
     tts_engine:document.getElementById('vtts').value,
     voice:document.getElementById('vvoice').value.trim(),
     openai_key:document.getElementById('vopenai').value.trim(),
@@ -695,6 +709,7 @@ def _run_video(params: dict) -> None:
         "openai_key": "--openai-key",
         "elevenlabs_key": "--elevenlabs-key",
         "tts_model": "--tts-model",
+        "hf_token": "--hf-token",
     }
     for field, flag in opt_map.items():
         value = params.get(field)
@@ -707,6 +722,10 @@ def _run_video(params: dict) -> None:
         cmd += ["--script-only"]
     if not params.get("ai_visuals", True):
         cmd += ["--no-ai-visuals"]
+    if params.get("web_images", True) is False:
+        cmd += ["--no-web-images"]
+    if params.get("ltx_video"):
+        cmd += ["--ltx-video"]
     if params.get("logo") is False:
         cmd += ["--no-logo"]
     engine = str(params.get("tts_engine") or "edge")

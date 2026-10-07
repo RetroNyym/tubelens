@@ -17,6 +17,8 @@ JSON_ENDPOINTS = (
     "https://text.pollinations.ai/openai",
 )
 TEXT_ENDPOINT = "https://text.pollinations.ai/"
+HF_ROUTER = "https://router.huggingface.co/v1/chat/completions"
+HF_MODEL = "openai/gpt-oss-120b"
 
 HEADERS = {"Content-Type": "application/json"}
 
@@ -65,6 +67,7 @@ def chat(
     retries: int = 2,
     api_key: str = "",
     max_tokens: int = 1600,
+    hf_token: str = "",
 ) -> str:
     """Tek seferlik sohbet; OpenAI-uyumlu uc noktayi deneyip duz metin yedegine duser."""
     messages: list[dict[str, str]] = []
@@ -83,6 +86,31 @@ def chat(
     headers = dict(HEADERS)
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+
+    # Hugging Face Router: token varsa once ucretsiz krediden dene;
+    # basarisizsa Pollinations'a sessizce dusulur.
+    if hf_token:
+        try:
+            resp = requests.post(
+                HF_ROUTER,
+                json={
+                    "model": HF_MODEL,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                },
+                headers={**HEADERS, "Authorization": f"Bearer {hf_token}"},
+                timeout=timeout,
+            )
+            if resp.status_code == 200:
+                content = ""
+                try:
+                    content = resp.json()["choices"][0]["message"]["content"]
+                except (ValueError, KeyError, IndexError):
+                    content = ""
+                if content and content.strip():
+                    return content.strip()
+        except requests.RequestException:
+            pass
 
     last_err: Exception | None = None
     for attempt in range(retries + 1):
@@ -322,6 +350,7 @@ def _request_script(
     system: str,
     target_words: int,
     api_key: str = "",
+    hf_token: str = "",
 ) -> dict[str, Any]:
     """Prompt ile senaryo JSON'u iste; kesik yanit / 429 icin token butceli retry."""
     # Yanit sinirinda kesilmesin: hedef kelimeye gore token butcesi ver.
@@ -340,6 +369,7 @@ def _request_script(
                 retries=0,
                 max_tokens=token_budget,
                 model="openai-fast",
+                hf_token=hf_token,
             )
             return _normalize(_extract_json(raw))
         except LLMError as exc:
@@ -355,6 +385,7 @@ def generate_script(
     aspect: str = "9:16",
     style: str = "",
     api_key: str = "",
+    hf_token: str = "",
 ) -> dict[str, Any]:
     """Konudan MoneyPrinterTurbo tarzi video senaryosu uretir (JSON)."""
     lang_name = LANG_NAMES.get(lang, lang)
@@ -368,7 +399,7 @@ def generate_script(
         "Ilk 3 saniyede dikkat ceken hook ile basla. SADECE JSON dondur:\n"
         + _JSON_SCHEMA
     )
-    return _request_script(prompt, system, target_words, api_key)
+    return _request_script(prompt, system, target_words, api_key, hf_token=hf_token)
 
 
 def clone_script(
@@ -377,6 +408,7 @@ def clone_script(
     duration: int = 45,
     lang: str = "tr",
     api_key: str = "",
+    hf_token: str = "",
 ) -> dict[str, Any]:
     """Kaynak videonun YAPISINI ogrenip ayni yapiyla ozgun senaryo uretir.
 
@@ -405,4 +437,4 @@ def clone_script(
         f"KAYNAK TRANSCRIPT:\n{transcript or '(transcript yok - basliga ve aciklamaya gore yorum yap)'}\n\n"
         "SADECE JSON dondur:\n" + _JSON_SCHEMA
     )
-    return _request_script(prompt, system, target_words, api_key)
+    return _request_script(prompt, system, target_words, api_key, hf_token=hf_token)

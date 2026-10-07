@@ -205,7 +205,13 @@ def cmd_clone(args: argparse.Namespace) -> int:
 
     print(f"[3/3] Klon senaryo uretiliyor (ayni yapi + ozgun aci, ~{duration} sn)")
     try:
-        script = llm.clone_script(source, aspect=args.aspect, duration=duration, lang=args.lang)
+        script = llm.clone_script(
+            source,
+            aspect=args.aspect,
+            duration=duration,
+            lang=args.lang,
+            hf_token=str(config.load_video_config().get("hf_token") or "").strip(),
+        )
     except llm.LLMError as exc:
         print(f"  HATA: {exc}", file=sys.stderr)
         return 3
@@ -364,6 +370,7 @@ def cmd_video(args: argparse.Namespace) -> int:
         "pixabay_api_key": args.pixabay_key,
         "openai_api_key": args.openai_key,
         "elevenlabs_api_key": args.elevenlabs_key,
+        "hf_token": args.hf_token,
     }
     changed = False
     for field, value in key_fields.items():
@@ -377,6 +384,7 @@ def cmd_video(args: argparse.Namespace) -> int:
     pixabay_key = (args.pixabay_key or vconf.get("pixabay_api_key") or "").strip()
     openai_key = (args.openai_key or vconf.get("openai_api_key") or "").strip()
     elevenlabs_key = (args.elevenlabs_key or vconf.get("elevenlabs_api_key") or "").strip()
+    hf_token = (args.hf_token or vconf.get("hf_token") or "").strip()
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -406,6 +414,7 @@ def cmd_video(args: argparse.Namespace) -> int:
                 aspect=args.aspect,
                 style=args.style,
                 api_key=str(vconf.get("pollinations_api_key") or ""),
+                hf_token=hf_token,
             )
         except llm.LLMError as exc:
             print(f"  HATA: {exc}", file=sys.stderr)
@@ -454,6 +463,9 @@ def cmd_video(args: argparse.Namespace) -> int:
             count=clip_count,
             aspect=args.aspect,
             allow_ai=not args.no_ai_visuals,
+            allow_web=not args.no_web_images,
+            allow_ltx=args.ltx_video,
+            hf_token=hf_token,
         )
     except footage.FootageError as exc:
         print(f"  HATA: {exc}", file=sys.stderr)
@@ -691,6 +703,9 @@ def main(argv: list[str] | None = None) -> int:
     p_video.add_argument("--openai-key", help="OpenAI API anahtarı (OpenAI TTS için, kaydedilir)")
     p_video.add_argument("--elevenlabs-key", help="ElevenLabs API anahtarı (kaydedilir)")
     p_video.add_argument("--no-ai-visuals", action="store_true", help="anahtarsız AI görsel fallback'ini kapat")
+    p_video.add_argument("--no-web-images", action="store_true", help="web görsel aramasını kapat (Bing/Openverse)")
+    p_video.add_argument("--ltx-video", action="store_true", help="LTX ile metinden AI video klip dene (anahtarsız, yavaş)")
+    p_video.add_argument("--hf-token", help="Hugging Face token (ücretsiz; senaryo LLM + LTX kotası, kaydedilir)")
     p_video.add_argument("--bgm", help="arka plan müziği dosyası")
     p_video.add_argument("--bgm-volume", type=float, default=0.12, help="müzik sesi (0-1)")
     p_video.add_argument("--no-subs", action="store_true", help="altyazı üretme")

@@ -49,6 +49,7 @@ def test_gather_no_keys_no_ai_fails_cleanly(tmp_path):
             dest_dir=tmp_path,
             count=2,
             allow_ai=False,
+            allow_web=False,
         )
     message = str(exc.value)
     assert "Pexels" in message and "Pixabay" in message

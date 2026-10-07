@@ -1,7 +1,8 @@
 """Video goruntu kaynaklari - coklu kaynak zinciri.
 
 Sira: lokal klasor -> Pexels (anahtar) -> Pixabay (anahtar) ->
-Pollinations AI gorsel + Ken Burns (ANAHTARSIZ son kaynak, asla bos kalmaz).
+LTX AI video (opsiyonel, anahtarsiz) -> web gorsel aramasi (ANAHTARSIZ,
+Bing/Openverse/Wikimedia) -> Pollinations AI gorsel + Ken Burns (son kaynak).
 """
 
 from __future__ import annotations
@@ -373,6 +374,101 @@ def from_ai_images(
     return picked
 
 
+def from_web_images(
+    queries: list[str],
+    dest_dir: Path,
+    count: int,
+    aspect: str = "9:16",
+) -> list[Path]:
+    """ANAHTARSIZ web gorsel aramasi: Bing/Openverse/Wikimedia -> Ken Burns klip.
+
+    Pollinations AI gorseline gore avantaji: sorguyla GERCEKTEN alakali
+    fotograflar bulur (filtirli stok siteleri ve filigranlar elenir).
+    """
+    from . import webimg
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    size = _ai_image_size(aspect)
+    pool = [str(q).strip() for q in queries if str(q).strip()] or [
+        "cinematic b-roll"
+    ]
+    picked: list[Path] = []
+    seen_urls: set[str] = set()
+    tries = 0
+    max_tries = max(6, len(pool) * 2)
+    i = 0
+    while len(picked) < count and tries < max_tries:
+        query = pool[i % len(pool)]
+        i += 1
+        tries += 1
+        try:
+            found = webimg.search(query)
+        except Exception:
+            found = None
+        if not found:
+            continue
+        _data, _source, url = found
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        idx = len(picked)
+        dest = dest_dir / f"web_{idx:02d}.mp4"
+        if dest.exists() and dest.stat().st_size > 10_000:
+            picked.append(dest)
+            continue
+        img = dest_dir / f"web_{idx:02d}.jpg"
+        img.write_bytes(found[0])
+        try:
+            picked.append(_still_to_clip(img, dest, size))
+        except FootageError:
+            continue
+    if not picked:
+        raise FootageError("Web gorsel aramasi sonuc vermedi (Bing/Openverse/Wikimedia)")
+    return picked
+
+
+def from_ltx_video(
+    queries: list[str],
+    dest_dir: Path,
+    count: int,
+    aspect: str = "9:16",
+    token: str = "",
+) -> list[Path]:
+    """Hugging Face LTX Space ile metinden AI video klip (ZeroGPU, anahtarsiz)."""
+    from . import hfspace
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    pool = [str(q).strip() for q in queries if str(q).strip()] or [
+        "cinematic abstract motion"
+    ]
+    random.shuffle(pool)
+    picked: list[Path] = []
+    failures = 0
+    last_err = ""
+    for i in range(count):
+        query = pool[i % len(pool)]
+        dest = dest_dir / f"ltx_{i:02d}.mp4"
+        if dest.exists() and dest.stat().st_size > 10_000:
+            picked.append(dest)
+            continue
+        prompt = (
+            f"{query}, cinematic b-roll, natural light, photorealistic, high detail, no text"
+        )
+        try:
+            hfspace.text_to_video(
+                prompt, dest, duration=4.0, aspect=aspect, token=token or None
+            )
+            picked.append(dest)
+        except hfspace.HfSpaceError as exc:
+            last_err = str(exc)
+            failures += 1
+            if failures >= 2:
+                break
+    if not picked:
+        raise FootageError(f"LTX AI video uretilemedi: {last_err or 'bilinmeyen hata'}")
+    return picked
+
+
 def gather(
     queries: list[str],
     *,
@@ -383,8 +479,11 @@ def gather(
     count: int = 6,
     aspect: str = "9:16",
     allow_ai: bool = True,
+    allow_web: bool = True,
+    allow_ltx: bool = False,
+    hf_token: str = "",
 ) -> list[Path]:
-    """Kaynak zinciri: lokal -> Pexels -> Pixabay -> AI gorsel (asla bos kalmaz)."""
+    """Kaynak zinciri: lokal -> Pexels -> Pixabay -> [LTX AI video] -> web gorseli -> AI gorsel."""
     if footage_dir:
         return from_local(Path(footage_dir), count, dest_dir=dest_dir, aspect=aspect)
 
@@ -405,6 +504,18 @@ def gather(
     else:
         problems.append("Pixabay: anahtar yok (https://pixabay.com/api/docs/)")
 
+    if allow_ltx:
+        try:
+            return from_ltx_video(queries, dest_dir, count, aspect, token=hf_token)
+        except FootageError as exc:
+            problems.append(f"LTX AI video: {exc}")
+
+    if allow_web:
+        try:
+            return from_web_images(queries, dest_dir, count, aspect)
+        except FootageError as exc:
+            problems.append(f"Web gorsel: {exc}")
+
     if allow_ai:
         try:
             return from_ai_images(queries, dest_dir, count, aspect)
@@ -415,5 +526,5 @@ def gather(
         "Goruntu kaynagi bulunamadi:\n  - "
         + "\n  - ".join(problems)
         + "\nCozumler: --pexels-key / --pixabay-key (ucretsiz), --footage-dir C:\\klasor "
-        "ya da AI gorselleri acik tutun (varsayilan acik)"
+        "ya da web gorsel aramasi / AI gorselleri acik tutun (varsayilan acik)"
     )
