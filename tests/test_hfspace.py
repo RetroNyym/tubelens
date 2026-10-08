@@ -138,3 +138,82 @@ def test_text_to_video_still_uses_text_endpoint(monkeypatch, tmp_path):
     assert captured["endpoint"] == "/text_to_video"
     assert captured["inputs"][6] == "text-to-video"
     assert captured["inputs"][4:6] == [576, 1024]  # h, w (16:9)
+
+
+def test_resolve_token_prefers_explicit_then_env(monkeypatch):
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    assert hfspace._resolve_token(None) is None
+    monkeypatch.setenv("HF_TOKEN", "hf_env")
+    assert hfspace._resolve_token(None) == "hf_env"
+    assert hfspace._resolve_token("") == "hf_env"
+    assert hfspace._resolve_token("hf_explicit") == "hf_explicit"
+
+
+def test_text_to_video_falls_back_to_env_token(monkeypatch, tmp_path):
+    monkeypatch.setenv("HF_TOKEN", "hf_env")
+    captured = {}
+
+    def fake_call(space, endpoint, inputs, token=None, timeout=600):
+        captured.update(token=token)
+        return {"video": {"url": "/file/x.mp4"}}
+
+    monkeypatch.setattr(hfspace, "call", fake_call)
+    monkeypatch.setattr(
+        hfspace, "_download_result",
+        lambda space, payload, dest, token=None: Path(dest),
+    )
+    hfspace.text_to_video("deneme", tmp_path / "o.mp4")
+    assert captured["token"] == "hf_env"
+
+
+def test_call_extracts_error_detail_from_json_sse(monkeypatch):
+    monkeypatch.setattr(
+        hfspace, "_style", lambda space: ("5", "https://x.hf.space")
+    )
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"event_id": "e1"}
+
+        text = ""
+
+    monkeypatch.setattr(hfspace.requests, "post", lambda *a, **k: _Resp())
+
+    class _Sse:
+        text = (
+            "event: error\n"
+            'data: {"error": "You have exhausted your maximum quota"}\n'
+        )
+
+    monkeypatch.setattr(hfspace.requests, "get", lambda *a, **k: _Sse())
+    with pytest.raises(hfspace.HfSpaceError) as exc:
+        hfspace.call("a/b", "/text_to_video", [], token=None, timeout=5)
+    message = str(exc.value)
+    assert "exhausted your maximum quota" in message
+
+
+def test_call_null_error_detail_gives_quota_hint(monkeypatch):
+    monkeypatch.setattr(
+        hfspace, "_style", lambda space: ("5", "https://x.hf.space")
+    )
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"event_id": "e1"}
+
+        text = ""
+
+    monkeypatch.setattr(hfspace.requests, "post", lambda *a, **k: _Resp())
+
+    class _Sse:
+        text = "event: error\ndata: null\n"
+
+    monkeypatch.setattr(hfspace.requests, "get", lambda *a, **k: _Sse())
+    with pytest.raises(hfspace.HfSpaceError) as exc:
+        hfspace.call("a/b", "/text_to_video", [], token=None, timeout=5)
+    message = str(exc.value)
+    assert "HF token" in message

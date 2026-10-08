@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import re
 import time
 from pathlib import Path
@@ -60,6 +61,11 @@ def _prefix(space: str) -> tuple[str, str]:
 
 def _hdr(token: str | None) -> dict[str, str]:
     return {"Authorization": "Bearer " + token} if token else {}
+
+
+def _resolve_token(token: str | None) -> str | None:
+    """Verilen token'i yoksa HF_TOKEN ortam degiskenine duser (anonim kota yerine hesap kotasi)."""
+    return (token or os.environ.get("HF_TOKEN") or "").strip() or None
 
 
 def available(space: str, token: str | None = None) -> bool:
@@ -147,6 +153,12 @@ def call(
     m_err = re.search(r"event: error\s*\ndata:\s*(.*)", text)
     if m_err:
         detail = m_err.group(1).strip()[:300]
+        if detail.startswith("{") or detail.startswith("["):
+            m_field = re.search(
+                r'"(?:error|message|detail|name)"\s*:\s*"([^"]{1,300})"', detail
+            )
+            if m_field:
+                detail = m_field.group(1).strip()[:300]
         if detail in ("null", "None", '""', ""):
             detail = (
                 "space GPU hatasi veya anonim kota doldu (hata mesaji gizli); "
@@ -241,7 +253,8 @@ def text_to_video(
     aspect: str = "16:9",
     token: str | None = None,
 ) -> Path:
-    """LTX Space ile metinden kisa video klip uretir (ZeroGPU, anahtarsiz)."""
+    """LTX Space ile metinden kisa video klip uretir (ZeroGPU; HF_TOKEN ile hesap kotasi)."""
+    token = _resolve_token(token)
     w, h = _ltx_size(aspect)
     data = [
         (prompt or "")[:700],
@@ -271,7 +284,8 @@ def image_to_video(
     token: str | None = None,
     prompt: str = "",
 ) -> Path:
-    """LTX Space ile goruntuden hareketli klip uretir (ZeroGPU, anahtarsiz)."""
+    """LTX Space ile goruntuden hareketli klip uretir (ZeroGPU; HF_TOKEN ile hesap kotasi)."""
+    token = _resolve_token(token)
     w, h = _ltx_size(aspect)
     up = upload(LTX_SPACE, image_path, token=token)
     data = [
@@ -304,6 +318,7 @@ def lipsync(
 
     image_path tek kare (avatar fotografi) ya da taban video olabilir.
     """
+    token = _resolve_token(token)
     up_i = upload(LATENTSYNC_SPACE, image_path, token=token)
     up_a = upload(LATENTSYNC_SPACE, audio_path, token=token)
     payload = call(

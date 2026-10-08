@@ -1,10 +1,11 @@
 """Metinden Klip modu - tek prompt'tan kisa video klip uretir.
 
 Saglayici sirasi (provider=auto):
-  1. ltx          - hfspace.text_to_video (HF ZeroGPU, anahtarsiz; kota dolabilir)
+  1. ltx          - hfspace.text_to_video (HF ZeroGPU; HF_TOKEN ile hesap kotasi)
   2. pollinations - asagidaki _pollinations_video (anahtar: POLLINATIONS_API_KEY)
-  3. viggle       - viggle.text_to_video (anahtar: --viggle-key / VIGGLE_API_KEY)
-  4. higgsfield   - higgsfield.generate (anahtar: --higgsfield-key / HIGGSFIELD_API_KEY)
+  3. pexels       - stok video indirip keser (pexels_api_key / PEXELS_API_KEY)
+  4. viggle       - viggle.text_to_video (anahtar: --viggle-key / VIGGLE_API_KEY)
+  5. higgsfield   - higgsfield.generate (anahtar: --higgsfield-key / HIGGSFIELD_API_KEY)
 
 Explicit provider adi yalniz o saglayiciyi denetir. Hepsinin basilmasi halinde
 KlipError, footage.FootageError gibi toplanan sorun listesini mesaj olarak
@@ -25,10 +26,10 @@ from pathlib import Path
 
 import requests
 
-from . import hfspace, higgsfield, viggle
-from .config import USER_AGENT, VIDEO_DIR, ensure_dirs
+from . import assemble, footage, hfspace, higgsfield, viggle
+from .config import USER_AGENT, VIDEO_DIR, ensure_dirs, load_video_config
 
-PROVIDERS = ("ltx", "pollinations", "viggle", "higgsfield")
+PROVIDERS = ("ltx", "pollinations", "pexels", "viggle", "higgsfield")
 ASPECTS = ("16:9", "9:16", "1:1", "4:3", "3:4")
 POLLINATIONS_VIDEO_URL = "https://gen.pollinations.ai/video/"
 POLLINATIONS_ENV_KEY = "POLLINATIONS_API_KEY"
@@ -88,7 +89,13 @@ def _pollinations_video(
     return path
 
 
-def _order(provider: str, *, viggle_key: str = "", higgsfield_key: str = "") -> list[str]:
+def _order(
+    provider: str,
+    *,
+    viggle_key: str = "",
+    higgsfield_key: str = "",
+    pexels_key: str = "",
+) -> list[str]:
     """Verilen provider icin denenecek saglayici listesini uretir."""
     name = (provider or "auto").strip().lower()
     name = {"ltx-video": "ltx", "hf": "ltx"}.get(name, name)
@@ -101,11 +108,73 @@ def _order(provider: str, *, viggle_key: str = "", higgsfield_key: str = "") -> 
             )
         return [name]
     order = ["ltx", "pollinations"]
+    if _resolve_pexels_key(pexels_key):
+        order.append("pexels")
     if viggle.resolve_key(viggle_key):
         order.append("viggle")
     if higgsfield.resolve_key(higgsfield_key):
         order.append("higgsfield")
     return order
+
+
+def _resolve_pexels_key(api_key: str = "") -> str:
+    """Pexels anahtari: arguman -> PEXELS_API_KEY -> data/video_config.json."""
+    return (
+        api_key or os.environ.get("PEXELS_API_KEY") or
+        str(load_video_config().get("pexels_api_key") or "")
+    ).strip()
+
+
+_CLIP_SIZES = {
+    "16:9": (1280, 720),
+    "9:16": (720, 1280),
+    "1:1": (720, 720),
+    "4:3": (960, 720),
+    "3:4": (720, 960),
+}
+
+
+def _pexels_clip(
+    prompt: str,
+    dest: str | Path,
+    *,
+    duration: float = 4.0,
+    aspect: str = "16:9",
+    api_key: str = "",
+) -> Path:
+    """Pexels stok videosunu indirip forma gore keser (anahtarli stok fallback)."""
+    key = _resolve_pexels_key(api_key)
+    if not key:
+        raise KlipError(
+            "Pexels API anahtari yok (Pexels sekmesinden kaydedin ya da "
+            "PEXELS_API_KEY ortam degiskeni verin; pexels.com/api)"
+        )
+    target = Path(dest)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    sources = footage.from_pexels([prompt], key, target.parent, 1, aspect)
+    src = sources[0]
+    w, h = _CLIP_SIZES.get(aspect, (1280, 720))
+    try:
+        assemble.run_ffmpeg(
+            [
+                "-i", str(src),
+                "-t", f"{max(0.5, float(duration)):g}",
+                "-vf",
+                f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+                f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-c:a", "aac", "-movflags", "+faststart",
+                str(target),
+            ],
+            timeout=300,
+        )
+    except assemble.AssemblyError as exc:
+        raise KlipError(f"Pexels klip kesilemedi: {exc}") from exc
+    if src != target:
+        src.unlink(missing_ok=True)
+    if not target.exists() or target.stat().st_size == 0:
+        raise KlipError("Pexels klip dosyasi olusmadi")
+    return target
 
 
 def _out_dir(out_dir: str | Path | None, prompt: str) -> Path:
@@ -124,6 +193,7 @@ def make_clip(
     provider: str = "auto",
     style: str = "",
     hf_token: str = "",
+    pexels_key: str = "",
     viggle_key: str = "",
     higgsfield_key: str = "",
 ) -> Path:
@@ -141,7 +211,12 @@ def make_clip(
         raise KlipError(f"Gecersiz sure: {duration!r}") from exc
     if dur <= 0:
         raise KlipError(f"Gecersiz sure: {dur}")
-    order = _order(provider, viggle_key=viggle_key, higgsfield_key=higgsfield_key)
+    order = _order(
+        provider,
+        viggle_key=viggle_key,
+        higgsfield_key=higgsfield_key,
+        pexels_key=pexels_key,
+    )
     full = ", ".join(p for p in (text, (style or "").strip()) if p)
     target = _out_dir(out_dir, text)
     target.mkdir(parents=True, exist_ok=True)
@@ -158,6 +233,10 @@ def make_clip(
                 )
             elif name == "pollinations":
                 _pollinations_video(full, dest, duration=dur, aspect=aspect)
+            elif name == "pexels":
+                _pexels_clip(
+                    full, dest, duration=dur, aspect=aspect, api_key=pexels_key
+                )
             elif name == "viggle":
                 viggle.text_to_video(
                     full, dest, duration=dur, aspect=aspect, api_key=viggle_key
@@ -176,7 +255,8 @@ def make_clip(
         raise KlipError(
             "Klip uretilemedi:\n  - "
             + "\n  - ".join(problems)
-            + "\nCozumler: --hf-token (LTX kotasi icin), "
+            + "\nCozumler: HF_TOKEN ortam degiskeni veya --hf-token (LTX hesap "
+            "kotasi), PEXELS_API_KEY / pexels sekmesinden anahtar (stok klip), "
             + f"{POLLINATIONS_ENV_KEY}, --viggle-key, --higgsfield-key "
             "ya da --provider ile farkli saglayici deneyin"
         )
@@ -210,7 +290,12 @@ def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
         help="saglayici: auto, ltx, pollinations, viggle, higgsfield (varsayilan auto)",
     )
     p.add_argument("--style", default="", help="stil eki (orn. belgesel, sinematik)")
-    p.add_argument("--hf-token", default="", help="Hugging Face token (LTX/LatentSync kotasi)")
+    p.add_argument("--hf-token", default="", help="Hugging Face token (LTX/LatentSync kotasi; yoksa HF_TOKEN ortam degiskeni)")
+    p.add_argument(
+        "--pexels-key",
+        default="",
+        help="Pexels API anahtari (stok klip fallback; yoksa vconf/PEXELS_API_KEY)",
+    )
     p.add_argument("--viggle-key", default="", help="Viggle API anahtari")
     p.add_argument("--higgsfield-key", default="", help="Higgsfield anahtari (id:secret)")
     p.add_argument("--out", default="", help="cikti klasoru (varsayilan videos/<zaman>-<slug>)")
@@ -234,6 +319,7 @@ def cmd_klip(args: argparse.Namespace) -> int:
             provider=args.provider,
             style=args.style,
             hf_token=args.hf_token,
+            pexels_key=args.pexels_key or _resolve_pexels_key(),
             viggle_key=args.viggle_key,
             higgsfield_key=args.higgsfield_key,
         )

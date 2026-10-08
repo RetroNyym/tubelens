@@ -1094,10 +1094,14 @@ def _execute_job(job: dict) -> None:
 
 
 def _saved_hf_token(params: dict) -> str:
+    import os
     from . import config
 
     return str(
-        params.get("hf_token") or config.load_video_config().get("hf_token") or ""
+        params.get("hf_token")
+        or config.load_video_config().get("hf_token")
+        or os.environ.get("HF_TOKEN")
+        or ""
     ).strip()
 
 

@@ -1,4 +1,4 @@
-"""klip.py - Metinden Klip modu testleri (ag gerektirmez, HTTP sahtelenir)."""
+﻿"""klip.py - Metinden Klip modu testleri (ag gerektirmez, HTTP sahtelenir)."""
 
 import argparse
 import json
@@ -32,14 +32,17 @@ def _record(monkeypatch, calls, ok_on=None):
 
     monkeypatch.setattr(klip.hfspace, "text_to_video", make("ltx"))
     monkeypatch.setattr(klip, "_pollinations_video", make("pollinations"))
+    monkeypatch.setattr(klip, "_pexels_clip", make("pexels"))
     monkeypatch.setattr(klip.viggle, "text_to_video", make("viggle"))
     monkeypatch.setattr(klip.higgsfield, "generate", make("higgsfield"))
 
 
 def _no_env(monkeypatch):
     for name in ("POLLINATIONS_API_KEY", "VIGGLE_API_KEY", "HIGGSFIELD_API_KEY",
-                 "HIGGSFIELD_KEY_ID", "HIGGSFIELD_KEY_SECRET"):
+                 "HIGGSFIELD_KEY_ID", "HIGGSFIELD_KEY_SECRET", "PEXELS_API_KEY",
+                 "HF_TOKEN"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(klip, "load_video_config", lambda: {})
 
 
 def test_auto_picks_ltx_first(tmp_path, monkeypatch):
@@ -76,6 +79,29 @@ def test_auto_includes_keyed_providers(tmp_path, monkeypatch):
         viggle_key="vk", higgsfield_key="id:secret",
     )
     assert calls == ["ltx", "pollinations", "viggle", "higgsfield"]
+
+
+def test_auto_includes_pexels_when_key_saved(tmp_path, monkeypatch):
+    _no_env(monkeypatch)
+    monkeypatch.setattr(klip, "load_video_config", lambda: {"pexels_api_key": "pk"})
+    calls = []
+    _record(monkeypatch, calls, ok_on="pexels")
+    out = klip.make_clip("deneme", tmp_path / "cikti", duration=3.0)
+    assert calls == ["ltx", "pollinations", "pexels"]
+    assert out.exists()
+
+
+def test_auto_pexels_falls_through_when_others_fail(tmp_path, monkeypatch):
+    _no_env(monkeypatch)
+    monkeypatch.setattr(klip, "load_video_config", lambda: {"pexels_api_key": "pk"})
+    calls = []
+    _record(monkeypatch, calls)
+    with pytest.raises(klip.KlipError) as exc:
+        klip.make_clip("deneme", tmp_path / "cikti")
+    assert calls == ["ltx", "pollinations", "pexels"]
+    message = str(exc.value)
+    assert "pexels:" in message
+    assert "HF_TOKEN" in message and "PEXELS_API_KEY" in message
 
 
 def test_explicit_provider_forces_one(tmp_path, monkeypatch):
@@ -168,6 +194,48 @@ def test_pollinations_video_requires_key(monkeypatch, tmp_path):
     assert "POLLINATIONS_API_KEY" in str(exc.value)
 
 
+def test_pexels_clip_requires_key(monkeypatch, tmp_path):
+    _no_env(monkeypatch)
+    with pytest.raises(klip.KlipError) as exc:
+        klip._pexels_clip("deneme", tmp_path / "v.mp4")
+    assert "Pexels" in str(exc.value)
+    assert "PEXELS_API_KEY" in str(exc.value)
+
+
+def test_resolve_pexels_key_order(monkeypatch):
+    _no_env(monkeypatch)
+    assert klip._resolve_pexels_key("") == ""
+    monkeypatch.setenv("PEXELS_API_KEY", "env-key")
+    assert klip._resolve_pexels_key("") == "env-key"
+    assert klip._resolve_pexels_key("arg-key") == "arg-key"
+
+
+def test_pexels_clip_trims_and_renames(tmp_path, monkeypatch):
+    _no_env(monkeypatch)
+    src = tmp_path / "pexels_123.mp4"
+    src.write_bytes(VIDEO_BYTES)
+    monkeypatch.setattr(klip.footage, "from_pexels", lambda *a, **k: [src])
+    seen = {}
+
+    def fake_ffmpeg(args, timeout=1800):
+        seen["args"] = args
+        seen["timeout"] = timeout
+        Path(args[-1]).write_bytes(VIDEO_BYTES)
+        return ""
+
+    monkeypatch.setattr(klip.assemble, "run_ffmpeg", fake_ffmpeg)
+    dest = tmp_path / "video.mp4"
+    out = klip._pexels_clip(
+        "drone", dest, duration=4.0, aspect="9:16", api_key="pk"
+    )
+    assert out == dest
+    args = seen["args"]
+    assert "-t" in args and "4" in args[args.index("-t") + 1]
+    vf = args[args.index("-vf") + 1]
+    assert "pad=720:1280" in vf
+    assert not src.exists()  # kaynak silinir, sadece kesilmis klip kalir
+
+
 def test_higgsfield_requires_key(monkeypatch, tmp_path):
     _no_env(monkeypatch)
     with pytest.raises(higgsfield.HiggsfieldError) as exc:
@@ -230,7 +298,7 @@ def test_cmd_klip_prints_steps(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(klip, "make_clip", fake)
     args = argparse.Namespace(
         prompt="bir klip", duration=4.0, aspect="16:9", provider="auto",
-        style="", hf_token="", viggle_key="", higgsfield_key="",
+        style="", hf_token="", pexels_key="", viggle_key="", higgsfield_key="",
         out=str(tmp_path / "cikti"),
     )
     assert klip.cmd_klip(args) == 0
@@ -246,7 +314,7 @@ def test_cmd_klip_reports_error(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(klip, "make_clip", boom)
     args = argparse.Namespace(
         prompt="bir klip", duration=4.0, aspect="16:9", provider="auto",
-        style="", hf_token="", viggle_key="", higgsfield_key="",
+        style="", hf_token="", pexels_key="", viggle_key="", higgsfield_key="",
         out=str(tmp_path / "cikti"),
     )
     assert klip.cmd_klip(args) == 3
