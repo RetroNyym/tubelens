@@ -1,10 +1,16 @@
-# TubeLens
+﻿# TubeLens — YouTube AI Visibility & Affiliate Audit + Keyless Video Generator
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](requirements.txt)
 [![CI](https://github.com/RetroNyym/tubelens/actions/workflows/ci.yml/badge.svg)](https://github.com/RetroNyym/tubelens/actions/workflows/ci.yml)
-[![Free queries](https://img.shields.io/badge/ücretsiz%20sorgu-5-brightgreen.svg)](#ücretsiz-plan-ve-lisans)
-[![Video kit](https://img.shields.io/badge/video-MP4%20üretimi-brightgreen.svg)](#3-tubelens-video-kit--para-basan-video-hattı)
+[![Free queries](https://img.shields.io/badge/ücretsiz%20sorgu-5-brightgreen.svg)](#ücretsiz-plan-ve-lisans-freemium)
+[![Video kit](https://img.shields.io/badge/video-MP4%20üretimi-brightgreen.svg)](#özellikler)
+
+> **EN:** YouTube AI-visibility checker (Google AI Overviews, YouTube AI summaries,
+> Bing Copilot, DuckDuckGo AI Chat) + affiliate / YouTube Shopping audit —
+> **no API key required**. Plus a **keyless video generator** (script → stock &
+> web image search → TTS → subtitles → FFmpeg), **text-to-video clips** and
+> **talking avatar** mode, all from one local dashboard.
 
 **YouTube AI arama görünürlüğü + affiliate gelir denetçisi.**
 Tek komutla bir videonun ya da kanalın: yapay zekâ özetlerinde görüp görünmediğini,
@@ -20,6 +26,16 @@ ve kaçırılan gelir fırsatlarını gösterir.
 > YouTube'un kendi AI özeti, Bing Copilot ve DuckDuckGo AI Chat üzerinden geliyor.
 > "Video kaçırıyor mu?" sorusuna yanıt veren, bunu API anahtarı olmadan yapan ve
 > affiliate tarafını da kontrol eden bir araç pazarda neredeyse yok.
+
+**İçindekiler:**
+[Ekran Görüntüleri](#ekran-görüntüleri) ·
+[Özellikler](#özellikler) ·
+[Kurulum](#kurulum) ·
+[Kullanım](#kullanım) ·
+[Ücretsiz plan ve lisans](#ücretsiz-plan-ve-lisans-freemium) ·
+[Nasıl çalışıyor?](#nasıl-çalışıyor) ·
+[Güncellemeler](#güncellemeler) ·
+[Yol haritası](#yol-haritası)
 
 ---
 
@@ -56,7 +72,7 @@ işlem günlüğü, sağlayıcı durumu ve CLI komut referansı:
 
 ## Özellikler
 
-### 1) AI arama görünürlüğü takibi
+### 1) AI arama görünürlüğü takibi — AI visibility checker (Google AI Overviews · YouTube AI · Bing Copilot · DuckDuckGo)
 Anahtar kelimeyi 4 motor üzerinden sorgular ve videonun nerede göründüğünü puanlar:
 
 | Motor | Ağırlık | Ne ölçülür |
@@ -72,7 +88,7 @@ Anahtar kelimeyi 4 motor üzerinden sorgular ve videonun nerede göründüğün�
 - Bot koruması / JS zorunluluğu olan motorlar **"bulundu" yerine dürüstçe `hata` döner**
   ve ağırlık çalışan motorlara kayar — yanıltıcı "0 sonuç" vermez.
 
-### 2) Affiliate & YouTube Shopping denetçisi
+### 2) Affiliate & YouTube Shopping denetçisi — affiliate link checker / disclosure audit
 Her video için:
 - Açıklamadaki linkler → affiliate tespiti (Amazon, Trendyol, Havuz, Impact, cdiscount …)
 - Reklam/sponsor **disclosure** var mı (YouTube politika riski)
@@ -82,7 +98,7 @@ Her video için:
 Sonuçta **0-100 gelir fırsat skoru** ve "şu videoya şunu ekle" şeklinde öncelikli
 fırsat listesi üretilir. Yanında **$ kaçak tahmini** da var (aşağıda bkz. özellik 5).
 
-### 3) TubeLens Video Kit — para basan video hattı
+### 3) TubeLens Video Kit — anahtarsız video üretim kiti (keyless AI video generator)
 
 MoneyPrinterTurbo tarzı, **kendi kitimiz** olarak doğrudan CLI'ye gömülü tam video
 üretim hattı. Tek komutla konudan bitmiş MP4'e:
@@ -126,7 +142,7 @@ MoneyPrinterTurbo tarzı, **kendi kitimiz** olarak doğrudan CLI'ye gömülü ta
 > isteğe bağlı hız/kalite artışıdır; LTX AI video da anahtarsız çalışır (HF token
 > ile kota genişler); OpenAI/ElevenLabs yalnızca daha iyi ses isteyenler içindir.
 
-### 4) Kazananı Klonla — Tarama → Üretim hattı (rakiplerde yok)
+### 4) Kazananı Klonla — Tarama → Üretim hattı (clone competitor script, rakiplerde yok)
 
 Tarama tablosundaki her videonun yanındaki **`▶ Klonla`** butonu:
 
@@ -145,7 +161,7 @@ python -m tubelens video --script-file data/clone_draft.json
 > "Rakibin en çok izlenen videosunu bul → 3 dakikada kendi versiyonunu üret" hattı.
 > Kota harcamaz (Pollinations anahtarsız); YouTube API anahtarı gerekmez.
 
-### 5) Gelir Kaçak $ Paneli — skor değil, para
+### 5) Gelir Kaçak $ Paneli — skor değil, para (revenue leak calculator)
 
 Skorlar ikna etmez; **para rakamı** eder. Tarama sonrası:
 
