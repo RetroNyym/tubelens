@@ -30,3 +30,20 @@ def test_words_to_srt_single_word():
     srt = words_to_srt([Word("tek", 0.0, 0.5)])
     assert "tek" in srt
     assert srt.count("-->") == 1
+
+
+def test_sizes_include_4_3_and_3_4():
+    from tubelens.assemble import SIZES
+
+    assert SIZES[("4:3", 720)] == (960, 720)
+    assert SIZES[("4:3", 1080)] == (1440, 1080)
+    assert SIZES[("3:4", 720)] == (720, 960)
+    assert SIZES[("3:4", 1080)] == (1080, 1440)
+
+
+def test_sizes_original_aspects_unchanged():
+    from tubelens.assemble import SIZES
+
+    assert SIZES[("9:16", 1080)] == (1080, 1920)
+    assert SIZES[("16:9", 720)] == (1280, 720)
+    assert SIZES[("1:1", 1080)] == (1080, 1080)

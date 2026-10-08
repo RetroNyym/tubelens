@@ -405,14 +405,18 @@ def cmd_video(args: argparse.Namespace) -> int:
             args.topic = str(script.get("title") or "klon-senaryo")
         print(f"[1/5] Senaryo dosyadan yuklendi: {spath.name} (LLM adimi atlandi)")
     else:
-        print(f"[1/5] Senaryo uretiliyor (Pollinations - anahtarsiz): {args.topic}")
+        from . import presets as _presets
+
+        style_text = _presets.resolve(getattr(args, "preset", ""), args.style or "")
+        src = "HF router" if hf_token else "Pollinations - anahtarsiz"
+        print(f"[1/5] Senaryo uretiliyor ({src}): {args.topic}")
         try:
             script = llm.generate_script(
                 args.topic,
                 lang=args.lang,
                 duration=args.duration,
                 aspect=args.aspect,
-                style=args.style,
+                style=style_text,
                 api_key=str(vconf.get("pollinations_api_key") or ""),
                 hf_token=hf_token,
             )
@@ -568,6 +572,12 @@ _DASH_COMMANDS = {
 }
 
 
+def _preset_choices() -> list[str]:
+    from .presets import PRESET_CHOICES
+
+    return list(PRESET_CHOICES)
+
+
 def _fix_dash_positional(argv: list[str]) -> list[str]:
     """'-kX...' gibi gorunen video ID'lerinin option sanilmasini onler.
 
@@ -658,7 +668,7 @@ def main(argv: list[str] | None = None) -> int:
     p_clone.add_argument("url", help="kaynak video URL veya ID")
     p_clone.add_argument("--lang", default="tr", help="senaryo dili (varsayılan tr)")
     p_clone.add_argument(
-        "--aspect", choices=["9:16", "16:9", "1:1"], default="9:16", help="video formatı"
+        "--aspect", choices=["9:16", "16:9", "1:1", "4:3", "3:4"], default="9:16", help="video formatı"
     )
     p_clone.add_argument(
         "--duration", type=int, default=0,
@@ -682,7 +692,7 @@ def main(argv: list[str] | None = None) -> int:
         "--duration", type=int, default=45, help="hedef seslendirme süresi (sn)"
     )
     p_video.add_argument(
-        "--aspect", choices=["9:16", "16:9", "1:1"], default="9:16", help="video formatı"
+        "--aspect", choices=["9:16", "16:9", "1:1", "4:3", "3:4"], default="9:16", help="video formatı"
     )
     p_video.add_argument(
         "--resolution", type=int, choices=[720, 1080], default=1080, help="çözünürlük"
@@ -696,6 +706,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_video.add_argument("--tts-model", help="OpenAI TTS modeli (varsayılan gpt-4o-mini-tts)")
     p_video.add_argument("--style", help="ton/istil (örn. belgesel, hızlı, eğlenceli)")
+    p_video.add_argument(
+        "--preset", default="", choices=[""] + _preset_choices(),
+        help="hazır stil preseti (sinematik/anime/2d/3d/minimal/belgesel)",
+    )
     p_video.add_argument("--clips", type=int, default=0, help="görüntü klip sayısı (0 = oto)")
     p_video.add_argument("--footage-dir", help="kendi görüntülerinizin klasörü")
     p_video.add_argument("--pexels-key", help="Pexels API anahtarı (ücretsiz, kaydedilir)")
@@ -713,6 +727,12 @@ def main(argv: list[str] | None = None) -> int:
     p_video.add_argument("--script-only", action="store_true", help="sadece senaryo üret")
     p_video.add_argument("--out", help="çıktı klasörü (varsayılan videos/<zaman>-<slug>)")
     p_video.set_defaults(func=cmd_video)
+
+    from . import avatar as _avatar_mod
+    from . import klip as _klip_mod
+
+    _klip_mod.register(sub)
+    _avatar_mod.register(sub)
 
     args = parser.parse_args(argv)
     if args.cmd == "video" and not args.topic and not args.script_file:

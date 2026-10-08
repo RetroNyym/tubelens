@@ -34,7 +34,7 @@ Issues = "https://github.com/RetroNyym/tubelens/issues"
 include = ["tubelens*"]
 
 [tool.setuptools.package-data]
-tubelens = ["assets/*.png"]
+tubelens = ["assets/*.png", "data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

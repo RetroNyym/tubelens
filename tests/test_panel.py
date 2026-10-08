@@ -174,3 +174,165 @@ def test_upload_flow(server, tmp_path, monkeypatch):
     # path traversal denemesi engellenir
     body = _post(f"{server}/api/upload/delete", {"name": "../meta.json"})
     assert body["ok"] is False
+
+
+def test_index_new_tabs_and_form_groups(server):
+    """Yeni arayuz: 5 sekme, gruplu video formu, klip/avatar, galeri, durum aksiyonlari."""
+    status, body, _ = _get(f"{server}/")
+    text = body.decode("utf-8")
+    assert status == 200
+    assert "Klip &amp; Avatar" in text
+    assert "Galeri &amp; Kuyruk" in text
+    assert 'data-tab="modes"' in text and 'data-tab="gallery"' in text
+    # grupli form alanlari
+    for field_id in (
+        "vpreset", "vclips", "vdurcustom", "vbgm", "vbgmvol", "vttsmodel",
+        "vsubs", "cllang", "claspect", "cldur", "kprompt", "aimg", "atext",
+    ):
+        assert field_id in text, field_id
+    assert "sinematik" in text          # stil preset
+    assert "4:3" in text and "3:4" in text  # yeni aspektler
+    assert "deactivate" in text         # lisans kaldirma butonu
+    assert "Raporu yeniden oluştur" in text
+    assert "Sağlayıcılar" in text
+
+
+def test_state_payload_new_keys(server):
+    status, body, _ = _get(f"{server}/api/state")
+    data = json.loads(body.decode("utf-8"))
+    assert status == 200
+    for key in ("jobs", "gallery", "providers", "license_text", "action_log"):
+        assert key in data, key
+    assert isinstance(data["jobs"], list)
+    assert isinstance(data["gallery"], list)
+    for key in ("pexels", "pixabay", "hf", "viggle", "higgsfield", "hedra", "ltx"):
+        assert key in data["providers"], key
+
+
+def test_klip_requires_prompt(server):
+    body = _post(f"{server}/api/klip", {})
+    assert body["ok"] is False
+    assert "prompt" in body["error"]
+
+
+def test_avatar_requires_image_and_voice(server, tmp_path, monkeypatch):
+    import base64
+
+    body = _post(f"{server}/api/avatar", {})
+    assert body["ok"] is False
+    assert "görsel" in body["error"]
+    # mevcut bir gorsel yukle, ses/metin yokken yine hata ver
+    monkeypatch.setattr(panel, "UPLOAD_DIR", tmp_path / "photos")
+    blob = base64.b64encode(b"\x89PNG" + b"\x00" * 32).decode()
+    assert _post(
+        f"{server}/api/upload", {"files": [{"name": "kanal.png", "data": blob}]}
+    )["ok"] is True
+    body = _post(f"{server}/api/avatar", {"image": "kanal.png"})
+    assert body["ok"] is False
+    assert "ses" in body["error"]
+
+
+def test_audio_and_bgm_upload_flow(server, tmp_path, monkeypatch):
+    import base64
+
+    monkeypatch.setattr(panel, "AUDIO_DIR", tmp_path / "audio")
+    monkeypatch.setattr(panel, "BGMDIR", tmp_path / "bgm")
+    blob = base64.b64encode(b"ID3" + b"\x00" * 64).decode()
+    body = _post(f"{server}/api/audio", {"files": [{"name": "ses.mp3", "data": blob}]})
+    assert body["ok"] is True and body["saved"] == 1
+    data = json.loads(_get(f"{server}/api/audio")[1])
+    assert data["files"][0]["name"] == "ses.mp3"
+    body = _post(f"{server}/api/bgm", {"files": [{"name": "muzik.mp3", "data": blob}]})
+    assert body["ok"] is True
+    data = json.loads(_get(f"{server}/api/bgm")[1])
+    assert data["files"][0]["name"] == "muzik.mp3"
+    # uzanti filtresi
+    body = _post(f"{server}/api/audio", {"files": [{"name": "photo.png", "data": blob}]})
+    assert body["ok"] is False
+    # silme
+    body = _post(f"{server}/api/audio/delete", {"name": "ses.mp3"})
+    assert body["ok"] is True
+    data = json.loads(_get(f"{server}/api/audio")[1])
+    assert data["files"] == []
+
+
+def test_gallery_list_and_file_guard(server, tmp_path, monkeypatch):
+    from tubelens import config
+
+    gal = tmp_path / "panel-klip-test"
+    gal.mkdir()
+    (gal / "video.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"x" * 64)
+    (gal / "meta.json").write_text(
+        json.dumps({"mode": "klip", "title": "Deneme klip", "duration_sec": 4}),
+        encoding="utf-8",
+    )
+    (gal / "subtitles.srt").write_text("1\n", encoding="utf-8")
+    monkeypatch.setattr(config, "VIDEO_DIR", tmp_path)
+    data = json.loads(_get(f"{server}/api/gallery")[1])
+    items = data["items"]
+    assert any(i["name"] == "panel-klip-test" and i["mode"] == "klip" for i in items)
+    item = next(i for i in items if i["name"] == "panel-klip-test")
+    assert item["title"] == "Deneme klip" and item["has_subs"] is True
+    # dosya servisi
+    status, body, _ = _get(f"{server}/api/gallery/panel-klip-test/video.mp4")
+    assert status == 200 and body.startswith(b"\x00\x00\x00\x18")
+    status, body, _ = _get(f"{server}/api/gallery/panel-klip-test/subtitles.srt")
+    assert status == 200
+    # izin disi dosya
+    try:
+        _get(f"{server}/api/gallery/panel-klip-test/script.json")
+        raise AssertionError("404 beklenirdi")
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 404
+    # silme
+    body = _post(f"{server}/api/gallery/delete", {"name": "panel-klip-test"})
+    assert body["ok"] is True
+    assert not gal.exists()
+
+
+def test_video_enqueue_goes_through_queue(server, monkeypatch):
+    import time
+
+    executed: list[dict] = []
+
+    def fake_execute(job):
+        executed.append(dict(job))
+        job["status"] = "done"
+
+    monkeypatch.setattr(panel, "_execute_job", fake_execute)
+    body = _post(f"{server}/api/video", {"topic": "kuyruk testi", "clips": 2})
+    assert body["ok"] is True and "job" in body
+    deadline = time.time() + 5
+    while time.time() < deadline and not executed:
+        time.sleep(0.05)
+    assert [j["kind"] for j in executed] == ["video"]
+    # params worker'a ulasir (topic + alanlar), yoksa CLI topic'siz calisir
+    assert executed[0]["params"]["topic"] == "kuyruk testi"
+    assert executed[0]["params"]["clips"] == 2
+    # fakat state'te params sızdırılmaz (anahtar guvenligi)
+    data = json.loads(_get(f"{server}/api/state")[1])
+    assert all("params" not in j for j in data["jobs"])
+
+
+def test_deactivate_and_report_actions(server, monkeypatch):
+    import time
+
+    calls: list[str] = []
+    monkeypatch.setattr(panel, "_run_action", lambda a: calls.append(a))
+    assert _post(f"{server}/api/deactivate", {})["ok"] is True
+    assert _post(f"{server}/api/report", {})["ok"] is True
+    deadline = time.time() + 5
+    while time.time() < deadline and len(calls) < 2:
+        time.sleep(0.05)
+    assert calls == ["deactivate", "report"]
+
+
+def test_preset_choices_wired():
+    from tubelens import cli
+    from tubelens.presets import PRESET_CHOICES, resolve
+
+    choices = cli._preset_choices()
+    assert choices == PRESET_CHOICES
+    assert len(choices) == 6
+    assert "sinematik" in resolve("sinematik", "hızlı")
+    assert resolve("", "belgesel") == "belgesel"

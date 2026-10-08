@@ -1,14 +1,16 @@
-"""Hugging Face Space (Gradio) istemcisi - LTX metinden video, anahtarsiz.
+"""Hugging Face Space (Gradio) istemcisi - LTX video + LatentSync dudak senkron.
 
 ai-video-studio'daki hfspace istemcisinin TubeLens'e tasinmis surumudur.
-Sadece LTX text-to-video kullanir; hata durumunda footage zinciri diger
-kaynaklara (web gorseli / AI gorsel) duser.
+LTX text-to-video / image-to-video ve LatentSync lipsync kullanir; hata
+durumunda cagiran mod (footage/klip/avatar) diger saglayicilara duser.
 """
 
 from __future__ import annotations
 
 import json
+import mimetypes
 import re
+import time
 from pathlib import Path
 
 import requests
@@ -16,11 +18,14 @@ import requests
 from .config import REQUEST_TIMEOUT, USER_AGENT
 
 LTX_SPACE = "Lightricks/ltx-video-distilled"
+LATENTSYNC_SPACE = "fffiloni/LatentSync"
 NEGATIVE = "worst quality, inconsistent motion, blurry, jittery, distorted"
 HF_MODEL = "openai/gpt-oss-120b"
 HF_ROUTER = "https://router.huggingface.co/v1/chat/completions"
 
+PROBE_TTL = 300.0
 _style_cache: dict[str, tuple[str, str]] = {}
+_probe_cache: dict[str, tuple[float, bool]] = {}
 
 
 class HfSpaceError(RuntimeError):
@@ -55,6 +60,60 @@ def _prefix(space: str) -> tuple[str, str]:
 
 def _hdr(token: str | None) -> dict[str, str]:
     return {"Authorization": "Bearer " + token} if token else {}
+
+
+def available(space: str, token: str | None = None) -> bool:
+    """Space ayakta mi? Hizli (PROBE_TTL saniye cache'li) ve ASLA hata vermez.
+
+    token parametresi API uyumlulugu icin alinir; probe anonim yapilir.
+    """
+    del token
+    now = time.time()
+    hit = _probe_cache.get(space)
+    if hit and now - hit[0] < PROBE_TTL:
+        return hit[1]
+    try:
+        _style(space)
+        ok = True
+    except Exception:
+        ok = False
+    _probe_cache[space] = (time.time(), ok)
+    return ok
+
+
+def upload(space: str, filepath: str | Path, token: str | None = None) -> str:
+    """Space'e dosya yukler ve Gradio file path anahtarini dondurur."""
+    path = Path(filepath)
+    try:
+        content = path.read_bytes()
+    except OSError as exc:
+        raise HfSpaceError(f"{space} dosya okunamadi: {path}") from exc
+    base, prefix = _prefix(space)
+    ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    try:
+        resp = requests.post(
+            base + prefix + "/upload",
+            files={"files": (path.name, content, ctype)},
+            headers={**_hdr(token), "User-Agent": USER_AGENT},
+            timeout=REQUEST_TIMEOUT * 9,
+        )
+    except requests.RequestException as exc:
+        raise HfSpaceError(f"{space} dosya yukleme hatasi: {exc}") from exc
+    if resp.status_code != 200:
+        raise HfSpaceError(f"{space} dosya yuklenemedi (HTTP {resp.status_code})")
+    try:
+        arr = resp.json()
+    except ValueError as exc:
+        raise HfSpaceError(f"{space} dosya yuklenemedi: {resp.text[:200]}") from exc
+    if isinstance(arr, list) and arr:
+        return str(arr[0])
+    if isinstance(arr, str) and arr:
+        return arr
+    raise HfSpaceError(f"{space} dosya yuklenemedi: {resp.text[:200]}")
+
+
+def _filedata(path: str) -> dict:
+    return {"path": path, "meta": {"_type": "gradio.FileData"}}
 
 
 def call(
@@ -201,3 +260,57 @@ def text_to_video(
     ]
     payload = call(LTX_SPACE, "/text_to_video", data, token=token, timeout=600)
     return _download_result(LTX_SPACE, payload, dest, token=token)
+
+
+def image_to_video(
+    image_path: str | Path,
+    dest: str | Path,
+    *,
+    duration: float = 4.0,
+    aspect: str = "16:9",
+    token: str | None = None,
+    prompt: str = "",
+) -> Path:
+    """LTX Space ile goruntuden hareketli klip uretir (ZeroGPU, anahtarsiz)."""
+    w, h = _ltx_size(aspect)
+    up = upload(LTX_SPACE, image_path, token=token)
+    data = [
+        (prompt or "")[:700],
+        NEGATIVE,
+        _filedata(up),
+        None,
+        h,
+        w,
+        "image-to-video",
+        _ltx_duration(duration),
+        9,
+        42,
+        False,
+        1,
+        True,
+    ]
+    payload = call(LTX_SPACE, "/image_to_video", data, token=token, timeout=600)
+    return _download_result(LTX_SPACE, payload, dest, token=token)
+
+
+def lipsync(
+    image_path: str | Path,
+    audio_path: str | Path,
+    dest: str | Path,
+    *,
+    token: str | None = None,
+) -> Path:
+    """LatentSync Space ile gorsel + ses uzerinden dudak senkron video uretir.
+
+    image_path tek kare (avatar fotografi) ya da taban video olabilir.
+    """
+    up_i = upload(LATENTSYNC_SPACE, image_path, token=token)
+    up_a = upload(LATENTSYNC_SPACE, audio_path, token=token)
+    payload = call(
+        LATENTSYNC_SPACE,
+        "/generate_lip_sync_video",
+        [_filedata(up_i), _filedata(up_a)],
+        token=token,
+        timeout=900,
+    )
+    return _download_result(LATENTSYNC_SPACE, payload, dest, token=token)

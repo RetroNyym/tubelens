@@ -1,8 +1,9 @@
 """Video goruntu kaynaklari - coklu kaynak zinciri.
 
-Sira: lokal klasor -> Pexels (anahtar) -> Pixabay (anahtar) ->
-LTX AI video (opsiyonel, anahtarsiz) -> web gorsel aramasi (ANAHTARSIZ,
-Bing/Openverse/Wikimedia) -> Pollinations AI gorsel + Ken Burns (son kaynak).
+Sira: lokal klasor -> Pexels (anahtar) -> Pixabay (anahtar) -> web gorsel
+aramasi (ANAHTARSIZ, Bing/Openverse/Wikimedia) -> LTX AI video (opsiyonel,
+anahtarsiz) -> AI gorsel (HF FLUX token'li once, olmazsa Pollinations) +
+Ken Burns (son kaynak).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from pathlib import Path
 
 import requests
 
+from . import hf
 from .config import HEADERS, POLITE_DELAY, REQUEST_TIMEOUT
 
 PEXELS_SEARCH_URL = "https://api.pexels.com/videos/search"
@@ -118,6 +120,10 @@ def _pick_file(files: list[dict], aspect: str) -> str | None:
         if aspect == "9:16" and height < width:
             continue
         if aspect == "16:9" and width < height:
+            continue
+        if aspect == "4:3" and width < height:
+            continue
+        if aspect == "3:4" and height < width:
             continue
         score = width
         if width >= 1920 or height >= 1920:
@@ -279,6 +285,10 @@ def _pick_pixabay_file(videos: dict, aspect: str) -> tuple[str, int, int]:
             continue
         if aspect == "16:9" and w < h:
             continue
+        if aspect == "4:3" and w < h:
+            continue
+        if aspect == "3:4" and h < w:
+            continue
         score = w * h
         if score > best[0]:
             best = (score, url, w, h)
@@ -292,9 +302,13 @@ def _pick_pixabay_file(videos: dict, aspect: str) -> tuple[str, int, int]:
 
 
 def _ai_image_size(aspect: str) -> tuple[int, int]:
-    return {"9:16": (768, 1344), "16:9": (1344, 768), "1:1": (1024, 1024)}.get(
-        aspect, (768, 1344)
-    )
+    return {
+        "9:16": (768, 1344),
+        "16:9": (1344, 768),
+        "1:1": (1024, 1024),
+        "4:3": (1344, 1008),
+        "3:4": (1008, 1344),
+    }.get(aspect, (768, 1344))
 
 
 def _still_to_clip(img: Path, dest: Path, size: tuple[int, int], dur: float = 3.4) -> Path:
@@ -329,13 +343,20 @@ def from_ai_images(
     dest_dir: Path,
     count: int,
     aspect: str = "9:16",
+    hf_token: str = "",
 ) -> list[Path]:
-    """ANAHTARSIZ son kaynak: Pollinations ile gorsel uret, Ken Burns ile klip yap."""
+    """AI gorselden Ken Burns klip: token varsa once HF FLUX, olmazsa Pollinations.
+
+    HF uc noktasi da basarisizsa sessizce Pollinations yedegine dusulur; her
+    gorsel aivis_NN.mp4 clip dosyasi olarak one eklenir (kopya uretilmez).
+    """
     dest_dir.mkdir(parents=True, exist_ok=True)
     size = _ai_image_size(aspect)
     picked: list[Path] = []
     pool = list(queries) or ["cinematic abstract background"]
     random.shuffle(pool)
+    token = (hf_token or "").strip()
+    hf_alive = bool(token)
 
     for i in range(count):
         query = pool[i % len(pool)]
@@ -347,23 +368,35 @@ def from_ai_images(
             f"{query}, cinematic b-roll still, natural light, shallow depth of field, "
             "photorealistic, high detail, no text"
         )
-        url = (
-            POLLINATIONS_IMAGE_URL
-            + urllib.parse.quote(prompt)
-            + f"?width={size[0]}&height={size[1]}&nologo=true&seed={random.randint(1, 10**6)}&model=flux"
-        )
         img = dest_dir / f"aivis_{i:02d}.jpg"
-        last_err = ""
-        for attempt in range(2):
+        hf_done = False
+        if hf_alive:
             try:
-                _download(url, img)
-                last_err = ""
-                break
-            except FootageError as exc:
-                last_err = str(exc)
-                time.sleep(3 + attempt * 3)
-        if last_err:
-            raise FootageError(f"AI gorsel indirilemedi ({query!r}): {last_err}")
+                _polite()
+                made = hf.generate_image(prompt, img, aspect=aspect, token=token)
+                candidate = Path(made) if made else img
+                if candidate.exists() and candidate.stat().st_size > 0:
+                    img = candidate
+                    hf_done = True
+            except Exception:
+                hf_alive = False
+        if not hf_done:
+            url = (
+                POLLINATIONS_IMAGE_URL
+                + urllib.parse.quote(prompt)
+                + f"?width={size[0]}&height={size[1]}&nologo=true&seed={random.randint(1, 10**6)}&model=flux"
+            )
+            last_err = ""
+            for attempt in range(2):
+                try:
+                    _download(url, img)
+                    last_err = ""
+                    break
+                except FootageError as exc:
+                    last_err = str(exc)
+                    time.sleep(3 + attempt * 3)
+            if last_err:
+                raise FootageError(f"AI gorsel indirilemedi ({query!r}): {last_err}")
         try:
             picked.append(_still_to_clip(img, dest, size))
         except FootageError:
@@ -483,7 +516,7 @@ def gather(
     allow_ltx: bool = False,
     hf_token: str = "",
 ) -> list[Path]:
-    """Kaynak zinciri: lokal -> Pexels -> Pixabay -> [LTX AI video] -> web gorseli -> AI gorsel."""
+    """Kaynak zinciri: lokal -> Pexels -> Pixabay -> web gorseli -> [LTX AI video] -> AI gorsel."""
     if footage_dir:
         return from_local(Path(footage_dir), count, dest_dir=dest_dir, aspect=aspect)
 
@@ -504,21 +537,21 @@ def gather(
     else:
         problems.append("Pixabay: anahtar yok (https://pixabay.com/api/docs/)")
 
-    if allow_ltx:
-        try:
-            return from_ltx_video(queries, dest_dir, count, aspect, token=hf_token)
-        except FootageError as exc:
-            problems.append(f"LTX AI video: {exc}")
-
     if allow_web:
         try:
             return from_web_images(queries, dest_dir, count, aspect)
         except FootageError as exc:
             problems.append(f"Web gorsel: {exc}")
 
+    if allow_ltx:
+        try:
+            return from_ltx_video(queries, dest_dir, count, aspect, token=hf_token)
+        except FootageError as exc:
+            problems.append(f"LTX AI video: {exc}")
+
     if allow_ai:
         try:
-            return from_ai_images(queries, dest_dir, count, aspect)
+            return from_ai_images(queries, dest_dir, count, aspect, hf_token=hf_token)
         except FootageError as exc:
             problems.append(f"AI gorsel: {exc}")
 
