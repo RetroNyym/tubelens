@@ -3,6 +3,72 @@
 TubeLens depoya itilen her önemli değişikliğin kaydı. Yeni bir değişiklik
 her push ile buraya eklenir. Biçim: [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/).
 
+## [Unreleased] — 2026-10-08
+
+### Eklendi
+- **Klip modu:** yeni `klip.py` — metinden anlatımsız 3–15 sn klip; sağlayıcı
+  sırası `ltx` (HF Spaces, anahtarsız) → `pollinations` (`POLLINATIONS_API_KEY`)
+  → `viggle`/`higgsfield` (env anahtarlı). CLI `python -m tubelens klip <FİKİR>`,
+  panel 3. sekmede "Klip Üret" formu. Yeni `viggle.py` / `higgsfield.py`.
+  Testler: `tests/test_klip.py`, `tests/test_viggle.py`.
+- **Avatar modu:** yeni `avatar.py` — görsel + ses (yoksa metinden Edge TTS)
+  ile dudak senkron video; sıra LatentSync (HF Spaces) → Hedra
+  (`HEDRA_API_KEY`) → Viggle (`VIGGLE_API_KEY`). CLI `avatar --image …`,
+  panelde "Avatar Üret" formu. Test: `tests/test_avatar.py`.
+- **ai-video-studio portu (panel):** 5 sekmeli yeni arayüz —
+  *Klip & Avatar*, *Galeri & Kuyruk* sekmeleri; gruplu Video Üret formu
+  (Konu & Format · Görsel Kaynakları · Ses & Altyazı).
+- **İş kuyruğu:** `/api/video|klip|/avatar` → `_enqueue` (aynı anda en fazla
+  2 farklı mod, geçmiş 60 iş, `state.jobs`), 2 daemon worker;
+  `/api/gallery` + `/api/gallery/<ad>/<dosya>` (Range/streaming),
+  `POST /api/gallery/delete`.
+- **Ses & müzik yükleme:** `AUDIO_DIR`/`BGMDIR` + `GET/POST /api/audio`,
+  `/api/bgm` (mp3 vb., 20 dosya sınırı) + silme uçları; panelde "Müzik yükle"
+  ve ses seçimi; `POST /api/video` gövdesine `bgm`, `bgm_volume`.
+- **Stil preset'leri:** yeni `presets.py` — `sinematik|anime|2d|3d|minimal|
+  belgesel`; CLI `--preset`, panelde "Stil" seçici; senaryo + görsel ekine
+  birleşik uygulanır. Test: `tests/test_presets.py`.
+- **4:3 / 3:4 formatları:** `assemble.SIZES` + AI görsel boyutları
+  (1344×1008 / 1008×1344) + Pexels/Pixabay dikeylik tercihleri; clone ve
+  video `--aspect` choices'ına eklendi. Testler: `test_assemble.py`,
+  `test_footage.py`.
+- **HF FLUX görsel:** yeni `hf.py` — 4 uçlu router (`FLUX.1-schnell`, krea,
+  SD3 …), token yoksa hata; `footage.from_ai_images` HF-first → Pollinations
+  fallback. Test: `tests/test_hf.py`.
+- **hfspace genişletmesi:** `available()` (asla fırlatmaz, cache'li),
+  `upload()`, `image_to_video()` (görüntüden LTX klip), `lipsync()`
+  (LatentSync Space), `LATENTSYNC_SPACE`. Test: `tests/test_hfspace.py`.
+- **Durum & Lisans aksiyonları:** `POST /api/deactivate` + `/api/report`
+  (`_run_action`, `state.action_log`), lisans detayı + sağlayıcı rozetleri
+  (`state.providers`), "Kaldır (deactivate)" / "Raporu yeniden oluştur".
+- **Tarama sekmesi klon ayarları:** `cllang`/`claspect`/`cldur` — klon
+  dili, formatı ve süresi (`POST /api/clone {url, lang, aspect, duration}`).
+
+### Değiştirildi
+- Panel arayüzü baştan tasarlandı (gruplu kart CSS'i, 5 sekme, alanların
+  tamamı kuyruk/Galeri/Durum uçlarıyla eşleşiyor); ekran görüntüleri
+  `docs/screenshots/` altında 5 sekme olarak yenilendi.
+- `POST /api/video` artık **kuyruğa** alır (`{ok, job}` döner, tekil
+  `video_busy` reddi kalktı); panelde üretim logu job nesnesinden okunur.
+- `footage.gather` docstring + kodda kaynak sırası: web görsel araması
+  LTX'ten **önce** (dokümanla aynı).
+- `pyproject.toml` package-data: `tubelens/data/*.json` (kurulumla gelir);
+  README `pip install -e ".[dev]"`.
+
+### Düzeltildi
+- **Kuyruk `params` kayboluyordu:** `_enqueue` iş nesnesine yazmıyordu →
+  CLI `topic`'siz çalışıp "topic veya --script-file gerekli" ile bitiyordu
+  (regresyon testi `test_video_enqueue_goes_through_queue`).
+- **Galeri video yükleme patlaması:** `renderGallery` her kartta
+  `preload="metadata"` ile tüm dosyaları çekiordu (60 MB'lik videolar +
+  her Range isteğinde tam dosya okuma) → headless Edge sayfada asılı
+  kalıyordu; `preload="none"` + `_send_path` streaming (Range'de sadece
+  istenen bayt). Panelde açılış süresi ~500 MB indirmeden kurtuldu.
+- **State'e anahtar sızıntısı:** `state.jobs` içindeki `params`
+  (hf/openai/elevenlabs anahtarları) `/api/state` yanıtından çıkarıldı.
+
+Testler: suite **163/163** geçiyor.
+
 ## [Unreleased] — 2026-10-07
 
 ### Eklendi

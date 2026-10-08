@@ -13,7 +13,8 @@ ve kaçırılan gelir fırsatlarını gösterir.
 
 **Ayrıca** anahtarsız **video üretim kiti** ile konudan bitmiş MP4 üretir
 (senaryo → görüntü [stok + **web görsel araması** + ops. AI video] → seslendirme
-→ altyazı → montaj), panelden tek tuşla.
+→ altyazı → montaj), panelden tek tuşla — yanında **klip** (metinden anlatımsız
+3–15 sn) ve **konuşma avatarı** (görsel + ses) modları da var.
 
 > **Neden bu araç?** 2026'da YouTube trafiğinin büyük kısmı Google AI Overviews,
 > YouTube'un kendi AI özeti, Bing Copilot ve DuckDuckGo AI Chat üzerinden geliyor.
@@ -24,17 +25,30 @@ ve kaçırılan gelir fırsatlarını gösterir.
 
 ## Ekran Görüntüleri
 
-**1 · Tarama & Rapor** — AI görünürlük tablosu, $ kaçak özeti, `▶ Klonla` / `Düzelt ▾` aksiyonları:
+**1 · Tarama & Rapor** — AI görünürlük tablosu, $ kaçak özeti, klon ayarları,
+`▶ Klonla` / `Düzelt ▾` aksiyonları:
 
 ![TubeLens — Tarama & Rapor sekmesi](docs/screenshots/panel-tarama.png)
 
-**2 · Video Üret** — kaynak/ses motoru seçimli üretim formu (web görsel araması + LTX anahtarsız),
-üretim logu ve `video.mp4` (altyazılı) + `video_no_subs.mp4` (altyazısız) + `subtitles.srt`
-indirme butonlarıyla "Son üretim" kartı:
+**2 · Video Üret** — gruplu üretim formu (Konu & Format · Görsel Kaynakları ·
+Ses & Altyazı; stil preset'leri, arka plan müziği, altyazı anahtarı), sağlayıcı
+rozetleri ve `video.mp4` (altyazılı) + `video_no_subs.mp4` (altyazısız) +
+`subtitles.srt` indirme butonlarıyla "Son üretim" kartı:
 
 ![TubeLens — Video Üret sekmesi](docs/screenshots/panel-video-uret.png)
 
-**3 · Durum & Lisans** — kota, lisans aktivasyonu ve CLI komut referansı:
+**3 · Klip & Avatar** — hızlı üretim modları: metinden anlatımsız klip
+(sağlayıcı seçimi) ve görsel + ses ile dudak senkron konuşma avatarı:
+
+![TubeLens — Klip & Avatar sekmesi](docs/screenshots/panel-klip-avatar.png)
+
+**4 · Galeri & Kuyruk** — iş kuyruğu (aynı anda 2 iş) + üretilen her şeyin
+galerisi (video · klip · avatar; oynat, indir, srt, sil):
+
+![TubeLens — Galeri & Kuyruk sekmesi](docs/screenshots/panel-galeri.png)
+
+**5 · Durum & Lisans** — kota, lisans aktivasyonu/kaldırma, lisans detayı,
+işlem günlüğü, sağlayıcı durumu ve CLI komut referansı:
 
 ![TubeLens — Durum & Lisans sekmesi](docs/screenshots/panel-durum.png)
 
@@ -155,7 +169,7 @@ git clone https://github.com/RetroNyym/tubelens.git
 cd tubelens
 python -m venv .venv
 .venv\Scripts\activate        # Windows — Linux/macOS: source .venv/bin/activate
-pip install -e .              # `tubelens` komutunu da kurar (alternatif: -r requirements.txt)
+pip install -e ".[dev]"        # `tubelens` komutunu da kurar + pytest (alternatif: -r requirements.txt)
 
 # doğrulama + testler (offline, ~5 sn)
 tubelens --version
@@ -203,11 +217,24 @@ python -m tubelens report
 python -m tubelens clone "https://www.youtube.com/watch?v=VIDEO_ID"
 python -m tubelens video --script-file data/clone_draft.json   # senaryo dosyadan (LLM atlanır)
 
-# Yerel panel (tarayıcıda açılır) — 3 sekmeli: Tarama & Rapor | Video Üret | Durum & Lisans
+# Yerel panel (tarayıcıda açılır) — 5 sekmeli: Tarama & Rapor | Video Üret |
+# Klip & Avatar | Galeri & Kuyruk | Durum & Lisans
 python -m tubelens panel
 
 # Video Kit: konudan bitmiş videoya (senaryo + görüntü + ses + altyazı)
 python -m tubelens video "Sabah koşusunun 7 faydası"
+
+# Stil preset'i: sinematik / anime / 2d / 3d / minimal / belgesel
+python -m tubelens video "Konu" --preset sinematik
+
+# 4:3 ve 3:4 dahil 5 format: 9:16 | 16:9 | 1:1 | 4:3 | 3:4
+python -m tubelens video "Konu" --aspect 4:3 --resolution 720
+
+# Metinden anlatımsız klip (3–15 sn) — senaryo yok, tek komut
+python -m tubelens klip "drone ile gün doğumu, sinematik" --aspect 16:9 --duration 4
+
+# Görsel + ses ile dudak senkron konuşma avatarı (ses yoksa metinden Edge TTS)
+python -m tubelens avatar --image kisi.png --text "Merhaba, kanalıma hoş geldiniz" --lang tr
 
 # Sadece senaryo üret (YouTube başlık/açıklama/etiketler dahil)
 python -m tubelens video "Yapay zeka nedir" --script-only
@@ -233,26 +260,34 @@ python -m tubelens video "konu" --no-web-images
 ```
 
 - **CLI:** çıktı `reports/report_*.html` dosyasına yazılır.
-- **Panel:** `http://127.0.0.1:8787` — **3 sekme**: *Tarama & Rapor* (analiz tabloları),
-  *Video Üret* (kaynak/ses motoru seçimli üretim formu + oynatıcı; **klon taslağı
-  geldiğinde form otomatik dolar**), *Durum & Lisans*
-  (kota, lisans aktivasyon formu). Tarama sekmesinde **`▶ Klonla`** butonu ve
+- **Panel:** `http://127.0.0.1:8787` — **5 sekme**: *Tarama & Rapor* (analiz
+  tabloları + klon ayarları), *Video Üret* (gruplu üretim formu; **klon taslağı
+  geldiğinde form otomatik dolar**), *Klip & Avatar* (hızlı üretim modları),
+  *Galeri & Kuyruk* (iş kuyruğu + üretim galerisi), *Durum & Lisans*
+  (kota, aktivasyon/kaldırma, rapor yeniden üretim, sağlayıcı durumu).
+  Tarama sekmesinde **`▶ Klonla`** butonu ve
   **$ kaçak** sütunu + satır açılır **`Düzelt ▾`** reçeteleri (Panoya kopyala) vardır.
   Üretilen video panelde oynatılır ve
   `/api/video/latest` adresinden indirilir (HTTP Range destekli, cache-bust'lu).
   Headless ortam için: `python -m tubelens panel --no-browser`.
 - **Panel video API'si:** `POST /api/video` gövdesi:
-  `{topic, lang, duration, aspect, resolution, style, footage_dir, pexels_key, pixabay_key,
-  ai_visuals, web_images, ltx_video, hf_token, tts_engine, voice, openai_key, elevenlabs_key,
-  script_only, script_file}`;
+  `{topic, lang, duration, aspect, resolution, preset, style, clips, footage_dir,
+  pexels_key, pixabay_key, ai_visuals, web_images, ltx_video, hf_token, tts_engine,
+  voice, tts_model, openai_key, elevenlabs_key, bgm, bgm_volume, subs,
+  script_only, script_file}` → **kuyruğa alınır** (aynı anda 2 iş, geçmiş
+  `/api/state` → `jobs`);
+  ayrıca `POST /api/klip {prompt, …}`, `POST /api/avatar {image, audio|text, …}`,
+  `GET /api/gallery`, `GET /api/audio`, `GET /api/bgm`;
   ilerleme `/api/state` → `video` alanında, son üretim `/api/video/latest` + `/api/video/srt`;
-  klon: `POST /api/clone` `{url}` → `state.clone.draft`;
-  lisans: `POST /api/activate` `{key}`. Üretim ≈1–3 dk sürer.
+  klon: `POST /api/clone` `{url, lang, aspect, duration}` → `state.clone.draft`;
+  lisans: `POST /api/activate` `{key}`, `POST /api/deactivate`, `POST /api/report`.
+  Üretim ≈1–3 dk sürer.
 - **Video Kit:** çıktı `videos/<zaman>-<slug>/` klasörüne yazılır; en son üretim
   `videos/` altında kalır, depoya girmez. `video --help` tüm seçenekleri listeler
-  (`--lang`, `--duration`, `--aspect 9:16|16:9|1:1`, `--voice`, `--clips`,
-  `--no-subs`, `--no-web-images`, `--ltx-video`, `--hf-token`,
-  `--bgm-volume`, `--out` …).
+  (`--lang`, `--duration`, `--aspect 9:16|16:9|1:1|4:3|3:4`, `--preset`,
+  `--voice`, `--clips`, `--no-subs`, `--no-web-images`, `--ltx-video`,
+  `--hf-token`, `--bgm-volume`, `--out` …);
+  hızlı modlar: `klip --help`, `avatar --help`.
 
 ### Örnek çıktı (gerçek üretim)
 
@@ -403,24 +438,31 @@ YouTube Data API kotası ve anahtarı olmadan çalışır. HTML'deki gömülü J
 | `quota.py` | Freemium kota (5 sorgu) + lisans durumu |
 | `license.py` | LemonSqueezy License API: activate / validate / deactivate, 7 gün yenileme, 30 gün tolerans |
 | `report.py` | Tek dosya HTML rapor (`reports/latest.html`) |
-| `panel.py` | Sekmeli HTTP paneli: tarama + video üretim API'si + lisans aktivasyon, oynatıcı/indirme (Range) |
-| `cli.py` | `scan` / `report` / `panel` / `video` / `status` / `activate` / `deactivate` / `keygen` (`--version`) |
+| `panel.py` | 5 sekmeli HTTP paneli: tarama + kuyruklu üretim API'si (video/klip/avatar) + galeri + ses/müzik yükleme + lisans aktivasyon/kaldırma, oynatıcı/indirme (Range, streaming) |
+| `cli.py` | `scan` / `report` / `panel` / `video` / `klip` / `avatar` / `status` / `activate` / `deactivate` / `keygen` (`--version`, `--preset`) |
 | `storage.py` | `data/store.json` kayıt deposu (tarama geçmişi) |
 | `llm.py` | Anahtarsız Pollinations LLM istemcisi + MPT tarzı senaryo üretici (JSON şema, cache-kırma retry) · ops. **HF router** (`openai/gpt-oss-120b`, `--hf-token`) |
-| `footage.py` | Görüntü kaynak zinciri: lokal → Pexels → Pixabay → **web görsel araması (anahtarsız)** → **LTX AI video (ops.)** → **Pollinations AI görsel + Ken Burns (anahtarsız)** |
+| `footage.py` | Görüntü kaynak zinciri: lokal → Pexels → Pixabay → **web görsel araması (anahtarsız)** → **LTX AI video (ops.)** → **AI görsel (HF FLUX token'lı önce → Pollinations + Ken Burns, anahtarsız)** |
 | `webimg.py` | Anahtarsız web görsel araması: Bing → Openverse → Wikimedia Commons (sayfa araması, anahtar gerekmez) |
-| `hfspace.py` | Hugging Face Spaces istemcisi: LTX metinden video + oturum/alan yönetimi (`hfspace.HfSpaceError` fırlatır, zincir sessizce düşer) |
+| `presets.py` | Stil preset'leri: sinematik / anime / 2d / 3d / minimal / belgesel (senaryo + görsel ekine birleştirilir) |
+| `hf.py` | Hugging Face router FLUX/SD görsel uçları (4 uçlu, `--hf-token`; hata → Pollinations'a düşer) |
+| `hfspace.py` | Hugging Face Spaces istemcisi: LTX metinden/görüntüden video + `image_to_video` + LatentSync lipsync + `available()` probu (`hfspace.HfSpaceError` fırlatır, zincir sessizce düşer) |
+| `klip.py` | Metinden anlatımsız klip: LTX → Pollinations video (anahtarlı) → Viggle / Higgsfield (anahtarlı) |
+| `avatar.py` | Görsel + ses/metten konuşma avatarı: LatentSync → Hedra → Viggle |
+| `viggle.py` / `higgsfield.py` | Viggle / Higgsfield API istemcileri (env anahtarlı) |
 | `voice.py` | 4 TTS motoru: Edge / gTTS (anahtarsız), OpenAI / ElevenLabs (anahtarlı) + kelime zamanlamaları |
-| `assemble.py` | FFmpeg montaj: scale/crop, concat, tpad, SRT yakma, ses mix |
+| `assemble.py` | FFmpeg montaj: scale/crop (5 format), concat, tpad, SRT yakma, ses mix |
 
 Kurulum/test altyapısı: `pyproject.toml` (`pip install -e .` → `tubelens` komutu),
-`tests/` (79 birim/smoke test, tamamı offline), GitHub Actions CI (Ubuntu + Windows).
+`tests/` (163 birim/smoke test, tamamı offline), GitHub Actions CI (Ubuntu + Windows).
 
 İstekler kibar gecikmeli (`POLITE_DELAY = 0.8s`), tek bir User-Agent ile atılır.
 Video kiti ağ istekleri: Pollinations (senaryo + AI görsel), Pexels/Pixabay (stok,
 opsiyonel), **Bing/Openverse/Wikimedia (web görsel araması, anahtarsız)**,
-**Hugging Face Spaces (LTX AI video, ops.)**, **HF router (senaryo, ops.)**,
-Edge TTS / gTTS (ses, anahtarsız), OpenAI/ElevenLabs (ses, anahtarlı).
+**Hugging Face Spaces (LTX AI video + LatentSync lipsync, ops.)**,
+**HF router (senaryo + FLUX görsel, ops.)**, Edge TTS / gTTS (ses, anahtarsız),
+OpenAI/ElevenLabs (ses, anahtarlı); klip/avatar uçları: Pollinations video,
+Viggle, Higgsfield, Hedra (anahtarlı, env).
 
 ---
 
@@ -440,7 +482,29 @@ Edge TTS / gTTS (ses, anahtarsız), OpenAI/ElevenLabs (ses, anahtarlı).
 Her önemli değişiklik push ile birlikte [CHANGELOG.md](CHANGELOG.md) dosyasına
 yazılır — yeni ne geldi, ne düzeldi oradan takip edilir.
 
-**Son güncellemeler (2026-10-07):**
+**Son güncellemeler (2026-10-08):**
+
+- 🎬 **Klip & Avatar modları:** `klip` (metinden anlatımsız 3–15 sn klip:
+  LTX → Pollinations → Viggle/Higgsfield) ve `avatar` (görsel + ses/metin
+  dudak senkron: LatentSync → Hedra → Viggle) — CLI + panel 3. sekme
+- 🖼️ **ai-video-studio portu:** görsel + klip galerisi, iş **kuyruğu**
+  (aynı anda 2 iş, geçmiş 60), arka plan müziği yükleme (`--bgm`),
+  stil **preset**'leri, lisans **kaldırma** + rapor yeniden üretim,
+  sağlayıcı durum rozetleri
+- 📐 **5 video formatı:** `4:3` ve `3:4` eklendi (montaj SIZES + AI görsel
+  boyutları + Pexels/Pixabay dikeylik tercihleri); HF router FLUX ile
+  **HF-first AI görsel** (anahtar varsa önce FLUX, olmazsa Pollinations)
+- 🎨 **Panel baştan tasarlandı:** gruplu kart düzeni + 5 sekme; tüm alanlar
+  kuyruk/Galeri/Durum aksiyonlarıyla birebir eşleşiyor (Bing görsel araması
+  ve LTX gibi port edilen her şey panelden de açılıp kapatılabilir)
+- 🐛 **Düzeltmeler:** kuyruk `params` işlenmiyordu (CLI topic'siz çalışıyordu),
+  galeri `<video preload="metadata">` sayfa açılışında tüm dosyaları
+  çekiyordu (`preload="none"` + Range'de streaming), state'e `params`
+  (anahtarlar) sızmıyordu
+- 📷 **5 sekmenin ekran görüntüleri** `docs/screenshots/` içinde;
+  testler 79 → **163**
+
+**Önceki (2026-10-07):**
 
 - 🌐 **Web görsel araması (anahtarsız):** kaynak zincirine 4. kademe —
   Bing/Openverse/Wikimedia'dan konuya alakalı gerçek fotoğraf (`--no-web-images`
@@ -480,9 +544,14 @@ yazılır — yeni ne geldi, ne düzeldi oradan takip edilir.
 - [x] **LTX AI video** (metinden klip, HF Spaces) + HF token'lı kota
 - [x] HF router ile ops. senaryo LLM (`openai/gpt-oss-120b`)
 - [x] Panel üzerinden video üretimi (Video Üret formu + oynatıcı/indirme)
-- [x] Panel sekmeleri: Tarama & Rapor | Video Üret | Durum & Lisans (+ aktivasyon)
+- [x] Panel sekmeleri: Tarama & Rapor | Video Üret | Klip & Avatar | Galeri & Kuyruk | Durum & Lisans
+- [x] **Klip modu** (metinden anlatımsız klip: LTX/Pollinations/Viggle/Higgsfield)
+- [x] **Avatar modu** (görsel + ses/metin dudak senkron: LatentSync/Hedra/Viggle)
+- [x] İş **kuyruğu** (aynı anda 2 iş) + üretim **galerisi** (oynat/indir/sil)
+- [x] Stil **preset**'leri + **4:3 / 3:4** formatları + arka plan müziği yükleme
+- [x] Sağlayıcı durum rozetleri, lisans kaldırma, rapor yeniden üretim
 - [x] TTS motorları: Edge + gTTS (anahtarsız), OpenAI + ElevenLabs (anahtarlı)
-- [x] Altyapı: pyproject kurulumu, 79 test, GitHub Actions CI
+- [x] Altyapı: pyproject kurulumu, 163 test, GitHub Actions CI
 
 ---
 
