@@ -336,3 +336,124 @@ def test_preset_choices_wired():
     assert len(choices) == 6
     assert "sinematik" in resolve("sinematik", "hızlı")
     assert resolve("", "belgesel") == "belgesel"
+
+
+def test_port_busy_detects_listener():
+    import socket
+
+    guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        guard.bind(("127.0.0.1", 0))
+        guard.listen(1)
+        occupied = guard.getsockname()[1]
+        assert panel._port_busy("127.0.0.1", occupied) is True
+    finally:
+        guard.close()
+
+
+def test_looks_like_tubelens_true(server):
+    port = int(server.rsplit(":", 1)[1])
+    assert panel._looks_like_tubelens("127.0.0.1", port) is True
+
+
+def test_looks_like_tubelens_false_for_foreign_server():
+    import threading
+    from http.server import BaseHTTPRequestHandler
+
+    class Foreign(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"other app")
+
+        def log_message(self, *args) -> None:
+            pass
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Foreign)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    port = httpd.server_address[1]
+    try:
+        assert panel._looks_like_tubelens("127.0.0.1", port) is False
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_pick_free_port_skips_occupied():
+    import socket
+
+    guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        guard.bind(("127.0.0.1", 0))
+        guard.listen(1)
+        occupied = guard.getsockname()[1]
+        free = panel._pick_free_port("127.0.0.1", occupied)
+        assert free is not None
+        assert free != occupied
+    finally:
+        guard.close()
+
+
+def test_pick_free_port_returns_none_when_all_busy(monkeypatch):
+    monkeypatch.setattr(panel, "_port_busy", lambda host, port: True)
+    assert panel._pick_free_port("127.0.0.1", 8787) is None
+
+
+def test_serve_falls_back_to_next_port(monkeypatch, capsys):
+    """Kapsanmis port TubeLens degilse panel sonraki bos porta tasinmali."""
+    import threading
+    from http.server import BaseHTTPRequestHandler
+
+    class Foreign(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"other app")
+
+        def log_message(self, *args) -> None:
+            pass
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Foreign)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    occupied = httpd.server_address[1]
+
+    bound_ports: list[int] = []
+
+    class DummyServer:
+        def __init__(self, addr, handler):
+            bound_ports.append(addr[1])
+
+        def serve_forever(self) -> None:
+            raise KeyboardInterrupt
+
+        def shutdown(self) -> None:
+            pass
+
+    monkeypatch.setattr(panel, "ThreadingHTTPServer", DummyServer)
+    try:
+        panel.serve(host="127.0.0.1", port=occupied, open_browser=False)
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+    text = capsys.readouterr().out
+    assert "tasindi" in text
+    assert bound_ports and bound_ports[0] != occupied
+
+
+def test_serve_reports_already_running(monkeypatch, capsys):
+    """Zaten calisan panelde ikinci acilis yeni sunucu acmamali."""
+    monkeypatch.setattr(panel, "_port_busy", lambda host, port: True)
+    monkeypatch.setattr(panel, "_looks_like_tubelens", lambda host, port: True)
+    opened: list[str] = []
+    monkeypatch.setattr(panel.webbrowser, "open", lambda url: opened.append(url))
+
+    def _fail_server(*args):
+        raise AssertionError("yeni sunucu acilmamaliydi")
+
+    monkeypatch.setattr(panel, "ThreadingHTTPServer", _fail_server)
+    panel.serve(host="127.0.0.1", port=8787, open_browser=True)
+    text = capsys.readouterr().out
+    assert "zaten calisiyor" in text
+    assert opened == ["http://127.0.0.1:8787"]

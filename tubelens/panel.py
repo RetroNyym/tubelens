@@ -1941,31 +1941,65 @@ class Handler(BaseHTTPRequestHandler):
         self._send(json.dumps({"ok": True}).encode(), "application/json")
 
 
-def serve(host: str = "127.0.0.1", port: int = 8787, open_browser: bool = True) -> None:
-    ensure_dirs()
-    url = f"http://{host}:{port}"
-    # Windows'ta SO_REUSEADDR nedeniyle bind hata vermeyebilir; once gercek
-    # dinleyici var mi kontrol et (zaten calisan panelde ikinci acilis iciin).
+def _port_busy(host: str, port: int) -> bool:
+    """Port uzerinde gercek bir dinleyici var mi?"""
     import socket
 
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.settimeout(1.5)
     try:
-        busy = probe.connect_ex((host, port)) == 0
+        return probe.connect_ex((host, port)) == 0
     finally:
         probe.close()
-    if busy:
-        print(f"Panel zaten calisiyor: {url}")
-        if open_browser:
-            try:
-                webbrowser.open(url)
-            except Exception:  # noqa: BLE001
-                pass
-        return
+
+
+def _looks_like_tubelens(host: str, port: int) -> bool:
+    """Portta cevap veren servis TubeLens paneli mi (baska uygulama degil)?"""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/", timeout=3) as resp:
+            return b"TubeLens Panel" in resp.read(8192)
+    except Exception:  # noqa: BLE001 - yanıt vermeyen/bozuk servis = TubeLens degil
+        return False
+
+
+def _pick_free_port(host: str, start: int, span: int = 12) -> int | None:
+    """start..start+span-1 arasindan bos portu dondurur, yoksa None."""
+    for port in range(start, start + span):
+        if not _port_busy(host, port):
+            return port
+    return None
+
+
+def serve(host: str = "127.0.0.1", port: int = 8787, open_browser: bool = True) -> None:
+    ensure_dirs()
+    # Windows'ta SO_REUSEADDR nedeniyle bind hata vermeyebilir; once gercek
+    # dinleyici var mi kontrol et. Port baska bir uygulama tarafindan tutuluyorsa
+    # (orn. ayni makinedeki baska bir yerel sunucu) panel sonraki bos porta tasinir.
+    if _port_busy(host, port):
+        if _looks_like_tubelens(host, port):
+            url = f"http://{host}:{port}"
+            print(f"Panel zaten calisiyor: {url}")
+            if open_browser:
+                try:
+                    webbrowser.open(url)
+                except Exception:  # noqa: BLE001
+                    pass
+            return
+        free = _pick_free_port(host, port + 1)
+        if free is None:
+            print(f"Panel baslatilamadi: {port} ve {port + 12} arasinda bos port yok.")
+            return
+        print(f"Not: {port} portu baska bir uygulama tarafindan kullaniyor.")
+        print(f"Panel {free} portuna tasindi.")
+        port = free
     try:
         server = ThreadingHTTPServer((host, port), Handler)
     except OSError as exc:
         print(f"Panel baslatilamadi (port {port}): {exc}")
         return
+    url = f"http://{host}:{port}"
     print(f"TubeLens panel: {url}")
     print("Durdurmak icin Ctrl+C")
     if open_browser:
@@ -1978,3 +2012,7 @@ def serve(host: str = "127.0.0.1", port: int = 8787, open_browser: bool = True) 
     except KeyboardInterrupt:
         print("\nPanel kapatildi.")
         server.shutdown()
+
+
+if __name__ == "__main__":
+    serve()
